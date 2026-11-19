@@ -4,10 +4,8 @@ on:
   workflow_dispatch:
   push:
     paths:
+      - 'NOIR/**'
       - '.github/workflows/android.yml'
-
-permissions:
-  contents: write
 
 jobs:
   build:
@@ -15,21 +13,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Extract NOIR Build 03 source
-        run: |
-          unzip -q NOIR-Android-Phone-Build-03.zip -d .
-          test -f NOIR/settings.gradle.kts
-
-      - name: Publish extracted source for the next update
-        run: |
-          if [ -n "$(git status --porcelain -- NOIR)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add NOIR
-            git commit -m "Add extracted NOIR Build 03 source"
-            git push
-          fi
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -54,5 +37,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NOIR-Build-03-APK
+          name: NOIR-Build-04-APK
           path: NOIR/app/build/outputs/apk/debug/*.apk
