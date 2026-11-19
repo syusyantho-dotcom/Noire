@@ -52,7 +52,12 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun NoirApp() {
-    var tab by remember { mutableStateOf("Discover") }
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("noir_preferences", Context.MODE_PRIVATE) }
+    var tab by remember { mutableStateOf("Home") }
+    var introSound by remember { mutableStateOf(prefs.getBoolean("intro_sound", true)) }
+    var launchIntro by remember { mutableStateOf(prefs.getBoolean("launch_intro", true)) }
+    var showAbout by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Series?>(null) }
     var selectedChapter by remember { mutableStateOf<Chapter?>(null) }
@@ -61,7 +66,7 @@ private fun NoirApp() {
     var catalogue by remember { mutableStateOf<List<Series>>(emptyList()) }
     val saved = remember { mutableStateListOf<Series>() }
     var loading by remember { mutableStateOf(false) }
-    var showIntro by remember { mutableStateOf(true) }
+    var showIntro by remember { mutableStateOf(launchIntro) }
     var error by remember { mutableStateOf<String?>(null) }
     val source = SourceRegistry.sources.first()
 
@@ -112,9 +117,21 @@ private fun NoirApp() {
                 )
                 tab == "Sources" -> SourcesScreen()
                 tab == "Library" -> LibraryScreen(saved.toList()) { selected = it }
-                else -> CatalogueScreen(tab, query, { query = it }, catalogue, loading, error, { selected = it }, { tab = it })
+                tab == "Profile" -> ProfileScreen(introSound, launchIntro,
+                    { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
+                    { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
+                    { showAbout = true })
+                tab == "Home" -> HomeScreen(catalogue, loading, error, { selected = it }, { tab = it })
+                else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, { selected = it }, { tab = it })
             }
-            if (showIntro) IntroOverlay { showIntro = false }
+            if (showAbout) AlertDialog(
+                onDismissRequest = { showAbout = false },
+                title = { Text("About NOIR", color = White) },
+                text = { Text("Your dark, focused manga and manhwa reading space. Version 0.5.0.", color = Muted) },
+                confirmButton = { TextButton(onClick = { showAbout = false }) { Text("CLOSE", color = Silver) } },
+                containerColor = Panel
+            )
+            if (showIntro) IntroOverlay(introSound) { showIntro = false }
           }
         }
     }
@@ -160,6 +177,98 @@ private fun CatalogueScreen(
             }
         }
         BottomNav(tab, onTab)
+    }
+}
+
+
+@Composable
+private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?, onOpen: (Series) -> Unit, onTab: (String) -> Unit) {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp)) {
+            Spacer(Modifier.height(25.dp))
+            Text("NOIR / YOUR READING ROOM", color = Muted, fontSize = 10.sp, letterSpacing = 2.2.sp)
+            Text("A world between\npages.", color = White, fontSize = 34.sp, lineHeight = 39.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(18.dp))
+            Box(Modifier.fillMaxWidth().height(178.dp).clip(RoundedCornerShape(24.dp)).background(
+                Brush.linearGradient(listOf(Color(0xFF34313E), Color(0xFF111115), Color(0xFF080809)))
+            ).clickable { catalogue.firstOrNull()?.let(onOpen) }.padding(20.dp)) {
+                Column(Modifier.align(Alignment.BottomStart)) {
+                    Text("THE NOIR EDIT", color = Silver, fontSize = 9.sp, letterSpacing = 2.sp)
+                    Spacer(Modifier.height(7.dp))
+                    Text("Find your next\nfavorite story.", color = White, fontSize = 23.sp, lineHeight = 27.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Explore the catalogue  →", color = Silver, fontSize = 10.sp)
+                }
+                Icon(Icons.Rounded.AutoAwesome, null, tint = Silver, modifier = Modifier.align(Alignment.TopEnd).size(28.dp))
+            }
+            Spacer(Modifier.height(24.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text("Popular right now", color = White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    Text("A selection from the catalogue", color = Muted, fontSize = 10.sp)
+                }
+                Spacer(Modifier.weight(1f))
+                Text("SEE ALL", color = Silver, fontSize = 9.sp, modifier = Modifier.clickable { onTab("Discover") }.padding(8.dp))
+            }
+            Spacer(Modifier.height(12.dp))
+            when {
+                loading && catalogue.isEmpty() -> LoadingState("Curating your home…")
+                error != null && catalogue.isEmpty() -> ErrorState(error)
+                catalogue.isEmpty() -> EmptyState("Nothing to show yet", "Check your connection and try Discover.")
+                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
+                    items(catalogue.take(8), key = { it.id }) { SeriesRow(it) { onOpen(it) } }
+                }
+            }
+        }
+        BottomNav("Home", onTab)
+    }
+}
+
+@Composable
+private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onAbout: () -> Unit) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
+        Spacer(Modifier.height(24.dp))
+        Text("NOIR / PERSONAL SPACE", color = Muted, fontSize = 10.sp, letterSpacing = 2.sp)
+        Text("Profile", color = White, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(22.dp))
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Panel).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(54.dp).clip(CircleShape).background(Color(0xFF303039)), contentAlignment = Alignment.Center) {
+                Text("N", color = White, fontSize = 32.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
+            }
+            Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                Text("NOIR READER", color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text("Your personal reading space", color = Muted, fontSize = 10.sp)
+            }
+            Text("0.5.0", color = Silver, fontSize = 9.sp)
+        }
+        Spacer(Modifier.height(26.dp))
+        Text("APP SETTINGS", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(10.dp))
+        SettingSwitch("Intro sound", "Play the short chime when NOIR opens", introSound, onIntroSound)
+        SettingSwitch("Launch animation", "Show the NOIR intro on app launch", launchIntro, onLaunchIntro)
+        Spacer(Modifier.height(22.dp))
+        Text("INFORMATION", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Panel).clickable(onClick = onAbout).padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Info, null, tint = Silver)
+            Text("About NOIR", color = White, fontSize = 13.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
+            Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
+        }
+        Spacer(Modifier.height(14.dp))
+        Text("Settings are saved on this device. Only implemented settings are shown here.", color = Muted, fontSize = 10.sp, lineHeight = 16.sp)
+        Spacer(Modifier.weight(1f))
+        BottomNav("Profile") { }
+    }
+}
+
+@Composable
+private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, color = White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text(subtitle, color = Muted, fontSize = 10.sp)
+        }
+        Switch(checked = checked, onCheckedChange = onChecked)
     }
 }
 
@@ -293,7 +402,7 @@ private fun LibraryScreen(items: List<Series>, onOpen: (Series) -> Unit) {
 @Composable
 private fun BottomNav(tab: String, onTab: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 12.dp).clip(RoundedCornerShape(30.dp)).background(Color(0xFF202024)).padding(5.dp), verticalAlignment = Alignment.CenterVertically) {
-        listOf("Home" to Icons.Rounded.Home, "Discover" to Icons.Rounded.Explore, "Library" to Icons.Rounded.Bookmarks, "Sources" to Icons.Rounded.Extension).forEach { (label, icon) ->
+        listOf("Home" to Icons.Rounded.Home, "Discover" to Icons.Rounded.Explore, "Library" to Icons.Rounded.Bookmarks, "Profile" to Icons.Rounded.Person).forEach { (label, icon) ->
             val active = tab == label
             Column(Modifier.weight(1f).clip(CircleShape).background(if (active) Color(0xFF414146) else Color.Transparent).clickable { onTab(label) }.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(icon, null, tint = if (active) White else Muted, modifier = Modifier.size(18.dp))
@@ -330,7 +439,7 @@ private fun EmptyState(title: String, message: String) {
 }
 
 @Composable
-private fun IntroOverlay(onFinished: () -> Unit) {
+private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
     val context = LocalContext.current
     val alpha = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
@@ -338,7 +447,7 @@ private fun IntroOverlay(onFinished: () -> Unit) {
         try {
             val appContext = context.applicationContext
             val audio = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            if (audio.getStreamVolume(AudioManager.STREAM_MUSIC) > 0) {
+            if (playSound && audio.getStreamVolume(AudioManager.STREAM_MUSIC) > 0) {
                 player = runCatching { MediaPlayer.create(appContext, R.raw.noir_chime) }.getOrNull()
                 player?.let { mediaPlayer ->
                     runCatching { mediaPlayer.setVolume(0.72f, 0.72f); mediaPlayer.start() }
