@@ -13,7 +13,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.delay
 
 private val Black = Color(0xFF070708)
@@ -143,84 +147,152 @@ private fun CatalogueScreen(
     loading: Boolean, error: String?, onOpen: (Series) -> Unit, onTab: (String) -> Unit
 ) {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp)) {
-            Spacer(Modifier.height(22.dp))
-            Text("NOIR / YOUR READING ROOM", color = Muted, fontSize = 10.sp, letterSpacing = 2.2.sp)
-            Text(if (tab == "Home") "NOIR" else "Discover", color = White, fontSize = 36.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(18.dp))
+        Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp)) {
+            Spacer(Modifier.height(24.dp))
+            Text("NOIR  /  EXPLORE", color = Muted, fontSize = 9.sp, letterSpacing = 2.5.sp)
+            Text("Discover", color = White, fontSize = 36.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(16.dp))
             OutlinedTextField(
                 value = query, onValueChange = onQuery, modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search manga and manhwa", color = Muted) },
-                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = Muted) },
+                placeholder = { Text("Search titles, manga, manhwa", color = Muted, fontSize = 13.sp) },
+                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = Silver) },
                 trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { onQuery("") }) { Icon(Icons.Rounded.Close, null, tint = Muted) } },
-                singleLine = true, shape = RoundedCornerShape(16.dp),
+                singleLine = true, shape = RoundedCornerShape(18.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Silver, unfocusedBorderColor = Panel,
-                    focusedContainerColor = Panel, unfocusedContainerColor = Panel,
-                    focusedTextColor = White, unfocusedTextColor = White
+                    focusedBorderColor = Color(0xFF827A9B), unfocusedBorderColor = Color(0xFF29272F),
+                    focusedContainerColor = Color(0xFF121116), unfocusedContainerColor = Color(0xFF121116),
+                    focusedTextColor = White, unfocusedTextColor = White, cursorColor = Silver
                 )
             )
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(19.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (query.isBlank()) "POPULAR TITLES" else "SEARCH RESULTS", color = White, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                Column {
+                    Text(if (query.isBlank()) "POPULAR COLLECTION" else "SEARCH RESULTS", color = White, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.7.sp)
+                    Text("Curated from your active sources", color = Muted, fontSize = 9.sp)
+                }
                 Spacer(Modifier.weight(1f))
-                Text("SAFE-RATED", color = Muted, fontSize = 9.sp, letterSpacing = 1.sp)
+                Text("SAFE-RATED", color = Color(0xFFB9B0D1), fontSize = 8.sp, letterSpacing = 1.2.sp)
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(13.dp))
             when {
                 loading && catalogue.isEmpty() -> LoadingState("Loading catalogue…")
                 error != null && catalogue.isEmpty() -> ErrorState(error)
                 catalogue.isEmpty() -> EmptyState("No titles found", "Try another title or check your connection.")
-                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
-                    items(catalogue, key = { it.id }) { SeriesRow(it) { onOpen(it) } }
+                else -> LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(17.dp),
+                    horizontalArrangement = Arrangement.spacedBy(13.dp),
+                    contentPadding = PaddingValues(bottom = 24.dp)
+                ) {
+                    items(catalogue, key = { it.id }) { item -> CoverTile(item) { onOpen(item) } }
                 }
             }
         }
-        BottomNav(tab, onTab)
+        BottomNav("Discover", onTab)
     }
 }
-
 
 @Composable
 private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?, onOpen: (Series) -> Unit, onTab: (String) -> Unit) {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp)) {
-            Spacer(Modifier.height(25.dp))
-            Text("NOIR / YOUR READING ROOM", color = Muted, fontSize = 10.sp, letterSpacing = 2.2.sp)
-            Text("A world between\npages.", color = White, fontSize = 34.sp, lineHeight = 39.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(18.dp))
-            Box(Modifier.fillMaxWidth().height(178.dp).clip(RoundedCornerShape(24.dp)).background(
-                Brush.linearGradient(listOf(Color(0xFF34313E), Color(0xFF111115), Color(0xFF080809)))
-            ).clickable { catalogue.firstOrNull()?.let(onOpen) }.padding(20.dp)) {
-                Column(Modifier.align(Alignment.BottomStart)) {
-                    Text("THE NOIR EDIT", color = Silver, fontSize = 9.sp, letterSpacing = 2.sp)
-                    Spacer(Modifier.height(7.dp))
-                    Text("Find your next\nfavorite story.", color = White, fontSize = 23.sp, lineHeight = 27.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text("Explore the catalogue  →", color = Silver, fontSize = 10.sp)
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(19.dp)
+        ) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("NOIR  /  YOUR READING ROOM", color = Muted, fontSize = 9.sp, letterSpacing = 2.1.sp)
+                        Text("Good stories.\nNo distractions.", color = White, fontSize = 31.sp, lineHeight = 35.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Box(Modifier.size(43.dp).clip(CircleShape).background(Color(0xFF211E2A)).border(1.dp, Color(0xFF514A60), CircleShape), contentAlignment = Alignment.Center) {
+                        Text("N", color = White, fontSize = 27.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
+                    }
                 }
-                Icon(Icons.Rounded.AutoAwesome, null, tint = Silver, modifier = Modifier.align(Alignment.TopEnd).size(28.dp))
             }
-            Spacer(Modifier.height(24.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column {
-                    Text("Popular right now", color = White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                    Text("A selection from the catalogue", color = Muted, fontSize = 10.sp)
+            item {
+                Box(Modifier.fillMaxWidth().height(222.dp).clip(RoundedCornerShape(25.dp)).background(Color(0xFF17141F))) {
+                    catalogue.firstOrNull()?.coverUrl?.let { url ->
+                        AsyncImage(model = url, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    }
+                    Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color(0xF5070709), Color(0x99070709), Color(0x22070709)))))
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC070709)))))
+                    Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
+                        Text("THE NOIR SELECTION", color = Color(0xFFD0C7E2), fontSize = 9.sp, letterSpacing = 2.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(catalogue.firstOrNull()?.title ?: "A universe of stories", color = White, fontSize = 23.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(5.dp))
+                        Text("Discover something worth staying up for", color = Color(0xFFD0CDD4), fontSize = 10.sp)
+                        Spacer(Modifier.height(11.dp))
+                        Row(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0x553F394B)).border(1.dp, Color(0x66D6CDE5), RoundedCornerShape(30.dp)).clickable { catalogue.firstOrNull()?.let(onOpen) }.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("EXPLORE FEATURE", color = White, fontSize = 8.sp, letterSpacing = 1.4.sp)
+                            Spacer(Modifier.width(7.dp))
+                            Icon(Icons.Rounded.ArrowForward, null, tint = White, modifier = Modifier.size(13.dp))
+                        }
+                    }
                 }
-                Spacer(Modifier.weight(1f))
-                Text("SEE ALL", color = Silver, fontSize = 9.sp, modifier = Modifier.clickable { onTab("Discover") }.padding(8.dp))
             }
-            Spacer(Modifier.height(12.dp))
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Popular right now", color = White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Stories selected from the catalogue", color = Muted, fontSize = 10.sp)
+                    }
+                    Text("VIEW ALL  →", color = Color(0xFFC9BEDC), fontSize = 8.sp, letterSpacing = 1.2.sp, modifier = Modifier.clickable { onTab("Discover") }.padding(8.dp))
+                }
+            }
             when {
-                loading && catalogue.isEmpty() -> LoadingState("Curating your home…")
-                error != null && catalogue.isEmpty() -> ErrorState(error)
-                catalogue.isEmpty() -> EmptyState("Nothing to show yet", "Check your connection and try Discover.")
-                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
-                    items(catalogue.take(8), key = { it.id }) { SeriesRow(it) { onOpen(it) } }
+                loading && catalogue.isEmpty() -> item { LoadingState("Curating your home…") }
+                error != null && catalogue.isEmpty() -> item { ErrorState(error) }
+                catalogue.isEmpty() -> item { EmptyState("Nothing to show yet", "Check your connection and try Discover.") }
+                else -> items(catalogue.take(10), key = { it.id }) { series -> HomeFeatureRow(series) { onOpen(series) } }
+            }
+            item {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Brush.linearGradient(listOf(Color(0xFF211D2B), Color(0xFF111014)))).clickable { onTab("Discover") }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("YOUR NEXT READ IS OUT THERE", color = Color(0xFFCFC5E0), fontSize = 8.sp, letterSpacing = 1.5.sp)
+                        Spacer(Modifier.height(5.dp))
+                        Text("Explore the full catalogue", color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Icon(Icons.Rounded.ArrowForward, null, tint = Silver)
                 }
             }
         }
         BottomNav("Home", onTab)
+    }
+}
+
+@Composable
+private fun CoverTile(series: Series, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(0.70f).clip(RoundedCornerShape(17.dp)).background(Color(0xFF1C1A21))) {
+            Cover(series.coverUrl, Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x22000000), Color(0x99000000)))))
+            Box(Modifier.align(Alignment.TopEnd).padding(8.dp).clip(RoundedCornerShape(20.dp)).background(Color(0x9909080D)).padding(horizontal = 8.dp, vertical = 5.dp)) {
+                Text(series.sourceName.uppercase(), color = Color(0xFFE0D9E9), fontSize = 7.sp, letterSpacing = 1.sp)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(series.title, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, lineHeight = 15.sp, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(3.dp))
+        Text("MANGA  /  MANHWA", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
+    }
+}
+
+@Composable
+private fun HomeFeatureRow(series: Series, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Cover(series.coverUrl, Modifier.size(65.dp, 84.dp))
+        Column(Modifier.weight(1f).padding(horizontal = 13.dp)) {
+            Text(series.title, color = White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(5.dp))
+            Text(series.description, color = Muted, fontSize = 9.sp, lineHeight = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(6.dp))
+            Text(series.sourceName.uppercase(), color = Color(0xFFC8BED8), fontSize = 8.sp, letterSpacing = 1.2.sp)
+        }
+        Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
     }
 }
 
@@ -294,7 +366,7 @@ private fun SeriesRow(series: Series, onClick: () -> Unit) {
 
 @Composable
 private fun Cover(url: String?, modifier: Modifier = Modifier) {
-    if (url != null) AsyncImage(model = url, contentDescription = "Manga cover", modifier = modifier.clip(RoundedCornerShape(12.dp)))
+    if (url != null) AsyncImage(model = url, contentDescription = "Manga cover", modifier = modifier.clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
     else Box(modifier.clip(RoundedCornerShape(12.dp)).background(Color(0xFF28282D)), contentAlignment = Alignment.Center) {
         Icon(Icons.Rounded.MenuBook, null, tint = Muted, modifier = Modifier.size(28.dp))
     }
@@ -406,13 +478,25 @@ private fun LibraryScreen(items: List<Series>, onOpen: (Series) -> Unit) {
 
 @Composable
 private fun BottomNav(tab: String, onTab: (String) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 12.dp).clip(RoundedCornerShape(30.dp)).background(Color(0xFF202024)).padding(5.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 7.dp, bottom = 12.dp)
+            .clip(RoundedCornerShape(30.dp))
+            .background(Brush.verticalGradient(listOf(Color(0xE52B2931), Color(0xF20F0E13))))
+            .border(1.dp, Color(0xFF46414F).copy(alpha = .72f), RoundedCornerShape(30.dp))
+            .padding(5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         listOf("Home" to Icons.Rounded.Home, "Discover" to Icons.Rounded.Explore, "Library" to Icons.Rounded.Bookmarks, "Profile" to Icons.Rounded.Person).forEach { (label, icon) ->
             val active = tab == label
-            Column(Modifier.weight(1f).clip(CircleShape).background(if (active) Color(0xFF414146) else Color.Transparent).clickable { onTab(label) }.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(icon, null, tint = if (active) White else Muted, modifier = Modifier.size(18.dp))
+            Column(
+                Modifier.weight(1f).clip(CircleShape)
+                    .background(if (active) Brush.verticalGradient(listOf(Color(0xFF51495F), Color(0xFF292531))) else Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)))
+                    .clickable { onTab(label) }.padding(vertical = 9.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(icon, null, tint = if (active) White else Color(0xFF89858F), modifier = Modifier.size(18.dp))
                 Spacer(Modifier.height(3.dp))
-                Text(label, color = if (active) White else Muted, fontSize = 8.sp)
+                Text(label, color = if (active) White else Color(0xFF89858F), fontSize = 8.sp, letterSpacing = .3.sp)
             }
         }
     }
