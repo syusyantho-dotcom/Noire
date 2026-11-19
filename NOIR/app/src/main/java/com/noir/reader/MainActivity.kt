@@ -120,7 +120,7 @@ private fun NoirApp() {
                 tab == "Profile" -> ProfileScreen(introSound, launchIntro,
                     { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
                     { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
-                    { showAbout = true })
+                    { showAbout = true }, { tab = it })
                 tab == "Home" -> HomeScreen(catalogue, loading, error, { selected = it }, { tab = it })
                 else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, { selected = it }, { tab = it })
             }
@@ -225,7 +225,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
 }
 
 @Composable
-private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onAbout: () -> Unit) {
+private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onAbout: () -> Unit, onTab: (String) -> Unit) {
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(24.dp))
         Text("NOIR / PERSONAL SPACE", color = Muted, fontSize = 10.sp, letterSpacing = 2.sp)
@@ -254,10 +254,15 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, onIntroSoun
             Text("About NOIR", color = White, fontSize = 13.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
             Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
         }
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Panel).clickable { onTab("Sources") }.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Extension, null, tint = Silver)
+            Text("Manage sources", color = White, fontSize = 13.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
+            Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
+        }
         Spacer(Modifier.height(14.dp))
         Text("Settings are saved on this device. Only implemented settings are shown here.", color = Muted, fontSize = 10.sp, lineHeight = 16.sp)
         Spacer(Modifier.weight(1f))
-        BottomNav("Profile") { }
+        BottomNav("Profile", onTab)
     }
 }
 
