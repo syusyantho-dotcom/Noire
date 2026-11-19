@@ -99,32 +99,36 @@ private fun IntroOverlay(onFinished: () -> Unit) {
     val context = LocalContext.current
     val alpha = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        if (audio.ringerMode == AudioManager.RINGER_MODE_NORMAL && audio.getStreamVolume(AudioManager.STREAM_MUSIC) > 0) {
-            runCatching {
-                MediaPlayer.create(context, R.raw.noir_chime)?.also { player ->
-                    player.setOnCompletionListener { it.release() }
-                    player.start()
-                }
+        var player: MediaPlayer? = null
+        try {
+            val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            if (audio.getStreamVolume(AudioManager.STREAM_MUSIC) > 0) {
+                player = MediaPlayer.create(context, R.raw.noir_chime)
+                player?.setVolume(0.72f, 0.72f)
+                player?.setOnCompletionListener { it.release() }
+                player?.start()
             }
+            alpha.animateTo(1f, tween(520))
+            delay(780)
+            alpha.animateTo(0f, tween(380))
+        } finally {
+            if (player?.isPlaying == true) player?.release()
+            onFinished()
         }
-        alpha.animateTo(1f, tween(520))
-        delay(780)
-        alpha.animateTo(0f, tween(380))
-        onFinished()
     }
     Box(Modifier.fillMaxSize().background(Ink).graphicsLayer { this.alpha = alpha.value }, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(92.dp).clip(RoundedCornerShape(28.dp))
-                .background(Brush.linearGradient(listOf(Color(0xFF25262A), Color(0xFF080809))))
-                .border(1.dp, Silver.copy(alpha = .48f), RoundedCornerShape(28.dp)), contentAlignment = Alignment.Center) {
-                Text("N", color = White, fontSize = 60.sp, fontWeight = FontWeight.Light, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
-                Box(Modifier.size(66.dp).border(1.dp, Silver.copy(alpha = .42f), CircleShape))
+            Box(Modifier.size(104.dp).clip(RoundedCornerShape(30.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF292832), Color(0xFF09090D))))
+                .border(1.dp, Silver.copy(alpha = .52f), RoundedCornerShape(30.dp)), contentAlignment = Alignment.Center) {
+                Text("N", color = White, fontSize = 72.sp, fontWeight = FontWeight.Light, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
+                Box(Modifier.width(106.dp).height(48.dp).rotate(-25f).border(1.2.dp, Color(0xFFB9B2D2).copy(alpha = .82f), CircleShape))
+                Text("✦", color = Color(0xFFE8E4F5), fontSize = 17.sp, modifier = Modifier.align(Alignment.TopEnd).padding(top = 15.dp, end = 18.dp))
             }
             Spacer(Modifier.height(22.dp))
-            Text("N O I R", color = White, fontSize = 24.sp, fontWeight = FontWeight.Medium, letterSpacing = 6.sp)
+            Text("NOIR", color = White, fontSize = 29.sp, fontWeight = FontWeight.Normal, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif, letterSpacing = 7.sp)
             Spacer(Modifier.height(9.dp))
-            Text("YOUR PRIVATE READING ROOM", color = Muted, fontSize = 8.sp, letterSpacing = 2.4.sp)
+            Text("MANGA  •  MANHWA  •  MORE", color = Muted, fontSize = 8.sp, letterSpacing = 2.4.sp)
         }
     }
 }
@@ -142,7 +146,7 @@ private fun HomeScreen(onOpen: (Manga) -> Unit, onContinue: (Manga) -> Unit, pro
     ScreenColumn {
         Spacer(Modifier.height(24.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Eyebrow("Your private reading room"); Text("NOIR", fontSize = 37.sp, fontWeight = FontWeight.Black, letterSpacing = 5.sp, color = White) }
+            Column(Modifier.weight(1f)) { Eyebrow("Your private reading room"); Text("NOIR", fontSize = 39.sp, fontWeight = FontWeight.Normal, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif, letterSpacing = 4.sp, color = White) }
             Box(Modifier.size(42.dp).clip(CircleShape).background(Panel).border(1.dp, Color.White.copy(.12f), CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Search, null, tint = Silver) }
         }
         Spacer(Modifier.height(28.dp))
