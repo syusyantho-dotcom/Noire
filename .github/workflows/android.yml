@@ -10,18 +10,16 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract NOIR project
+      - name: Extract NOIR 0.2
         run: |
-          unzip -q NOIR-Android-Phone-Build.zip -d .
+          unzip -q NOIR-Android-Phone-Build-02.zip -d .
           test -f NOIR/settings.gradle.kts
-          test -f NOIR/app/build.gradle.kts
 
-      - name: Set up Java 17
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -34,20 +32,15 @@ jobs:
 
       - name: Set up Android SDK
         run: |
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SDKMANAGER" ]; then
-            SDKMANAGER="$(command -v sdkmanager)"
-          fi
-          yes | "$SDKMANAGER" --licenses
-          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Build NOIR APK
+      - name: Build NOIR
         working-directory: NOIR
         run: gradle assembleDebug
 
-      - name: Upload NOIR APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NOIR-APK
+          name: NOIR-0.2-APK
           path: NOIR/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
