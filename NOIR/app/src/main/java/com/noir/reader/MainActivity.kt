@@ -101,18 +101,30 @@ private fun IntroOverlay(onFinished: () -> Unit) {
     LaunchedEffect(Unit) {
         var player: MediaPlayer? = null
         try {
-            val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            // Use the application context and keep one owner for MediaPlayer cleanup.
+            // Releasing it in both the completion callback and finally can crash on some devices.
+            val appContext = context.applicationContext
+            val audio = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             if (audio.getStreamVolume(AudioManager.STREAM_MUSIC) > 0) {
-                player = MediaPlayer.create(context, R.raw.noir_chime)
-                player?.setVolume(0.72f, 0.72f)
-                player?.setOnCompletionListener { it.release() }
-                player?.start()
+                player = runCatching { MediaPlayer.create(appContext, R.raw.noir_chime) }.getOrNull()
+                player?.let { mediaPlayer ->
+                    runCatching {
+                        mediaPlayer.setVolume(0.72f, 0.72f)
+                        mediaPlayer.start()
+                    }.onFailure {
+                        runCatching { mediaPlayer.release() }
+                        player = null
+                    }
+                }
             }
             alpha.animateTo(1f, tween(520))
             delay(780)
             alpha.animateTo(0f, tween(380))
+        } catch (_: Exception) {
+            // Audio must never prevent the app from opening.
         } finally {
-            if (player?.isPlaying == true) player?.release()
+            // Release exactly once; do not query isPlaying after release/completion.
+            player?.let { runCatching { it.setOnCompletionListener(null); it.release() } }
             onFinished()
         }
     }
