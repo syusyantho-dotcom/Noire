@@ -30,6 +30,13 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
+      # Keep the debug signing key stable between ephemeral GitHub runners.
+      - name: Restore persistent debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: noir-debug-signing-key-v1
+
       - name: Build NOIR
         working-directory: NOIR
         run: gradle assembleDebug
