@@ -1,9 +1,15 @@
 package com.noir.reader
 
 import android.os.Bundle
+import android.content.Context
+import android.media.AudioManager
+import android.media.MediaPlayer
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,7 +23,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,6 +61,7 @@ private fun NoirApp() {
     var catalogue by remember { mutableStateOf<List<Series>>(emptyList()) }
     val saved = remember { mutableStateListOf<Series>() }
     var loading by remember { mutableStateOf(false) }
+    var showIntro by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     val source = SourceRegistry.sources.first()
 
@@ -87,6 +98,7 @@ private fun NoirApp() {
 
     MaterialTheme(colorScheme = darkColorScheme(background = Black, surface = Panel, primary = Silver, onBackground = White, onSurface = White)) {
         Surface(Modifier.fillMaxSize(), color = Black) {
+          Box(Modifier.fillMaxSize()) {
             when {
                 selectedChapter != null -> ReaderScreen(selected, selectedChapter!!, pages, loading, error) { selectedChapter = null }
                 selected != null -> DetailScreen(
@@ -102,6 +114,8 @@ private fun NoirApp() {
                 tab == "Library" -> LibraryScreen(saved.toList()) { selected = it }
                 else -> CatalogueScreen(tab, query, { query = it }, catalogue, loading, error, { selected = it }, { tab = it })
             }
+            if (showIntro) IntroOverlay { showIntro = false }
+          }
         }
     }
 }
@@ -314,3 +328,46 @@ private fun EmptyState(title: String, message: String) {
         }
     }
 }
+
+@Composable
+private fun IntroOverlay(onFinished: () -> Unit) {
+    val context = LocalContext.current
+    val alpha = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        var player: MediaPlayer? = null
+        try {
+            val appContext = context.applicationContext
+            val audio = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            if (audio.getStreamVolume(AudioManager.STREAM_MUSIC) > 0) {
+                player = runCatching { MediaPlayer.create(appContext, R.raw.noir_chime) }.getOrNull()
+                player?.let { mediaPlayer ->
+                    runCatching { mediaPlayer.setVolume(0.72f, 0.72f); mediaPlayer.start() }
+                        .onFailure { runCatching { mediaPlayer.release() }; player = null }
+                }
+            }
+            alpha.animateTo(1f, tween(520))
+            delay(780)
+            alpha.animateTo(0f, tween(380))
+        } catch (_: Exception) {
+        } finally {
+            player?.let { runCatching { it.setOnCompletionListener(null); it.release() } }
+            onFinished()
+        }
+    }
+    Box(Modifier.fillMaxSize().background(Black).graphicsLayer { this.alpha = alpha.value }, contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(104.dp).clip(RoundedCornerShape(30.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF292832), Color(0xFF09090D))))
+                .border(1.dp, Silver.copy(alpha = .52f), RoundedCornerShape(30.dp)), contentAlignment = Alignment.Center) {
+                Text("N", color = White, fontSize = 72.sp, fontWeight = FontWeight.Light, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
+                Box(Modifier.width(106.dp).height(48.dp).rotate(-25f).border(1.2.dp, Color(0xFFB9B2D2).copy(alpha = .82f), CircleShape))
+                Text("✦", color = Color(0xFFE8E4F5), fontSize = 17.sp, modifier = Modifier.align(Alignment.TopEnd).padding(top = 15.dp, end = 18.dp))
+            }
+            Spacer(Modifier.height(22.dp))
+            Text("NOIR", color = White, fontSize = 29.sp, fontWeight = FontWeight.Normal, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif, letterSpacing = 7.sp)
+            Spacer(Modifier.height(9.dp))
+            Text("MANGA  •  MANHWA  •  MORE", color = Muted, fontSize = 8.sp, letterSpacing = 2.4.sp)
+        }
+    }
+}
+
