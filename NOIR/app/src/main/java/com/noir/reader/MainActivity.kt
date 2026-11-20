@@ -835,6 +835,56 @@ private fun DetailScreen(
 }
 
 @Composable
+private fun ReaderPageImage(
+    pageUrl: String,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale
+) {
+    var zoom by remember(pageUrl) { mutableFloatStateOf(1f) }
+    var panX by remember(pageUrl) { mutableFloatStateOf(0f) }
+    var panY by remember(pageUrl) { mutableFloatStateOf(0f) }
+
+    AsyncImage(
+        model = pageUrl,
+        contentDescription = "Comic page",
+        contentScale = contentScale,
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = zoom
+                scaleY = zoom
+                translationX = panX
+                translationY = panY
+            }
+            .pointerInput(pageUrl) {
+                androidx.compose.foundation.gestures.detectTransformGestures { _, pan, gestureZoom, _ ->
+                    val nextZoom = (zoom * gestureZoom).coerceIn(1f, 4f)
+                    zoom = nextZoom
+                    if (nextZoom <= 1.01f) {
+                        panX = 0f
+                        panY = 0f
+                    } else {
+                        panX += pan.x
+                        panY += pan.y
+                    }
+                }
+            }
+            .pointerInput(pageUrl) {
+                androidx.compose.foundation.gestures.detectTapGestures(
+                    onDoubleTap = {
+                        if (zoom > 1.05f) {
+                            zoom = 1f
+                            panX = 0f
+                            panY = 0f
+                        } else {
+                            zoom = 2.25f
+                        }
+                    }
+                )
+            }
+    )
+}
+
+@Composable
 private fun ReaderScreen(
     series: Series?, chapter: Chapter, pages: List<String>, loading: Boolean, error: String?,
     initialPage: Int, readerMode: String, onModeChange: (String) -> Unit,
@@ -846,6 +896,10 @@ private fun ReaderScreen(
         pageCount = { pages.size }
     )
     var showModeMenu by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var dimAmount by remember { mutableFloatStateOf(0f) }
+    var fitToWidth by remember { mutableStateOf(true) }
+
     LaunchedEffect(pages.size, initialPage, readerMode) {
         if (pages.isNotEmpty()) {
             val target = initialPage.coerceIn(0, pages.lastIndex)
@@ -860,12 +914,19 @@ private fun ReaderScreen(
         }
     }
     val currentPage = if (readerMode == "Horizontal" || readerMode == "Right to left") pagerState.currentPage else listState.firstVisibleItemIndex
+
     Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().background(Black).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().background(Black).padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             IconButton(onClick = onBack) { Icon(Icons.Rounded.Close, null, tint = White) }
             Column(Modifier.weight(1f)) {
                 Text(series?.title ?: "NOIR READER", color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                Text(chapter.name, color = Muted, fontSize = 9.sp)
+                Text(chapter.name, color = Muted, fontSize = 9.sp, maxLines = 1)
+            }
+            IconButton(onClick = { showSettings = true }) {
+                Icon(Icons.Rounded.Tune, "Reader settings", tint = Silver)
             }
             Box {
                 Text(
@@ -883,36 +944,101 @@ private fun ReaderScreen(
                 }
             }
         }
-        when {
-            loading && pages.isEmpty() -> LoadingState("Loading chapter pages…")
-            error != null -> ErrorState(error)
-            pages.isEmpty() -> EmptyState("No pages available", "This chapter may not have readable pages.")
-            readerMode == "Horizontal" || readerMode == "Right to left" ->
-                androidx.compose.foundation.pager.HorizontalPager(
-                    state = pagerState,
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            when {
+                loading && pages.isEmpty() -> LoadingState("Loading chapter pages…")
+                error != null -> ErrorState(error)
+                pages.isEmpty() -> EmptyState("No pages available", "This chapter may not have readable pages.")
+                readerMode == "Horizontal" || readerMode == "Right to left" ->
+                    androidx.compose.foundation.pager.HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.fillMaxSize(),
+                        reverseLayout = readerMode == "Right to left"
+                    ) { index ->
+                        ReaderPageImage(
+                            pageUrl = pages[index],
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = if (fitToWidth) ContentScale.FillWidth else ContentScale.Fit
+                        )
+                    }
+                else -> LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    reverseLayout = readerMode == "Right to left"
-                ) { index ->
-                    AsyncImage(
-                        model = pages[index], contentDescription = "Comic page",
-                        contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()
-                    )
+                    verticalArrangement = Arrangement.spacedBy(if (readerMode == "Webtoon") 0.dp else 2.dp)
+                ) {
+                    items(pages) { page ->
+                        ReaderPageImage(
+                            pageUrl = page,
+                            modifier = Modifier.fillMaxWidth(),
+                            contentScale = ContentScale.FillWidth
+                        )
+                    }
                 }
-            else -> LazyColumn(
-                state = listState, modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(if (readerMode == "Webtoon") 0.dp else 2.dp)
+            }
+            if (dimAmount > 0f && pages.isNotEmpty()) {
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dimAmount)))
+            }
+        }
+        if (pages.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().background(Color(0xFF101013)).padding(horizontal = 16.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(pages) { page ->
-                    AsyncImage(
-                        model = page, contentDescription = "Comic page",
-                        contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxWidth()
-                    )
+                Icon(Icons.Rounded.BrightnessLow, null, tint = Muted, modifier = Modifier.size(16.dp))
+                Slider(
+                    value = dimAmount,
+                    onValueChange = { dimAmount = it },
+                    valueRange = 0f..0.65f,
+                    modifier = Modifier.weight(1f).padding(horizontal = 9.dp)
+                )
+                Text("DIM", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
+            }
+            if (readerMode == "Horizontal" || readerMode == "Right to left") {
+                Row(
+                    Modifier.fillMaxWidth().background(Color(0xFF101013)).padding(horizontal = 14.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = { if (pagerState.currentPage > 0) androidx.compose.runtime.LaunchedEffect(Unit) { pagerState.animateScrollToPage(pagerState.currentPage - 1) } }, enabled = pagerState.currentPage > 0) {
+                        Text("PREVIOUS", color = Silver, fontSize = 9.sp)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text("${currentPage + 1} / ${pages.size}", color = Muted, fontSize = 9.sp)
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { /* pager swipe remains the primary next-page gesture */ }, enabled = false) {
+                        Text("SWIPE →", color = Muted, fontSize = 9.sp)
+                    }
                 }
             }
         }
     }
-}
 
+    if (showSettings) {
+        AlertDialog(
+            onDismissRequest = { showSettings = false },
+            containerColor = Panel,
+            title = { Text("Reader settings", color = White, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("PAGE DISPLAY", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Fit page to width", color = White, fontSize = 12.sp)
+                            Text("Scale pages to the available reader width", color = Muted, fontSize = 10.sp)
+                        }
+                        Switch(checked = fitToWidth, onCheckedChange = { fitToWidth = it })
+                    }
+                    Text("ZOOM", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp)
+                    Text("Pinch with two fingers to zoom. Double-tap a page to zoom in or reset. Drag to pan while zoomed.", color = Muted, fontSize = 11.sp, lineHeight = 17.sp)
+                    Text("SCREEN DIMMING", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp)
+                    Slider(value = dimAmount, onValueChange = { dimAmount = it }, valueRange = 0f..0.65f)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSettings = false }) { Text("DONE", color = Color(0xFFD6C5F2)) }
+            }
+        )
+    }
+}
 @Composable
 private fun SourcesScreen(
     enabledSourceIds: Set<String>,
