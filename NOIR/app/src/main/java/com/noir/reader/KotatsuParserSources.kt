@@ -34,7 +34,7 @@ import org.koitharu.kotatsu.parsers.model.ContentRating
 import org.koitharu.kotatsu.parsers.model.Manga
 import org.koitharu.kotatsu.parsers.model.MangaChapter
 import org.koitharu.kotatsu.parsers.model.MangaListFilter
-import org.koitharu.kotatsu.parsers.model.MangaSource as ParserMangaSource
+import org.koitharu.kotatsu.parsers.model.MangaSource as KotatsuSourceContract
 import org.koitharu.kotatsu.parsers.model.ParserMangaSource
 import org.koitharu.kotatsu.parsers.model.SortOrder
 import org.koitharu.kotatsu.parsers.webview.InterceptedRequest
@@ -184,7 +184,7 @@ private class NoirParserContext(context: Context) : MangaLoaderContext() {
     override val parsers: ParsersBundle
         get() = ParsersBundleImpl
 
-    override fun getConfig(source: org.koitharu.kotatsu.parsers.model.MangaSource): MangaSourceConfig = DefaultParserConfig
+    override fun getConfig(source: KotatsuSourceContract): MangaSourceConfig = DefaultParserConfig
 
     override fun getDefaultUserAgent(): String =
         "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
