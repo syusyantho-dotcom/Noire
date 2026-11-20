@@ -828,38 +828,100 @@ private fun LibraryScreen(items: List<Series>, onOpen: (Series) -> Unit, onTab: 
 
 @Composable
 private fun BottomNav(tab: String, onTab: (String) -> Unit) {
-    Row(
+    val destinations = listOf(
+        "Home" to Icons.Rounded.Home,
+        "Discover" to Icons.Rounded.Explore,
+        "Library" to Icons.Rounded.Bookmarks,
+        "Profile" to Icons.Rounded.Person
+    )
+    val selectedIndex = destinations.indexOfFirst { it.first == tab }.coerceAtLeast(0)
+    val animatedIndex by animateFloatAsState(
+        targetValue = selectedIndex.toFloat(),
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 360f),
+        label = "noir-liquid-nav-slide"
+    )
+
+    BoxWithConstraints(
         Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 7.dp, bottom = 12.dp)
-            .clip(RoundedCornerShape(30.dp))
-            .background(Brush.verticalGradient(listOf(Color(0xE52B2931), Color(0xF20F0E13))))
-            .border(1.dp, Color(0xFF46414F).copy(alpha = .72f), RoundedCornerShape(30.dp))
-            .padding(5.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
-        listOf("Home" to Icons.Rounded.Home, "Discover" to Icons.Rounded.Explore, "Library" to Icons.Rounded.Bookmarks, "Profile" to Icons.Rounded.Person).forEach { (label, icon) ->
-            val active = tab == label
-            val pillColor by animateColorAsState(
-                targetValue = if (active) Color(0xFF393342) else Color.Transparent,
-                animationSpec = tween(260), label = "nav-pill-$label"
-            )
-            val iconScale by animateFloatAsState(
-                targetValue = if (active) 1.08f else 1f,
-                animationSpec = spring(dampingRatio = 0.62f, stiffness = 420f),
-                label = "nav-icon-$label"
-            )
-            val labelColor by animateColorAsState(
-                targetValue = if (active) White else Color(0xFF89858F),
-                animationSpec = tween(220), label = "nav-label-$label"
-            )
-            Column(
-                Modifier.weight(1f).clip(CircleShape)
-                    .background(pillColor)
-                    .clickable { onTab(label) }.padding(vertical = 9.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+        val itemWidth = maxWidth / destinations.size
+        Box(
+            Modifier.fillMaxWidth().height(62.dp)
+                .clip(RoundedCornerShape(30.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xD936333E), Color(0xE817161D), Color(0xE80D0C11))
+                    )
+                )
+                .border(1.dp, Color(0x66CFC4D8), RoundedCornerShape(30.dp))
+        ) {
+            // A moving, layered glass lens. The spring makes the selected surface glide
+            // between destinations instead of recolouring four independent buttons.
+            Box(
+                Modifier
+                    .width(itemWidth - 5.dp)
+                    .fillMaxHeight()
+                    .padding(vertical = 4.dp)
+                    .graphicsLayer {
+                        translationX = itemWidth.toPx() * animatedIndex + 2.5.dp.toPx()
+                    }
+                    .clip(RoundedCornerShape(25.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xA8A99AB8), Color(0x705C526B), Color(0x80504A5A))
+                        )
+                    )
+                    .border(1.dp, Color(0x8CF1E8FA), RoundedCornerShape(25.dp))
             ) {
-                Icon(icon, null, tint = labelColor, modifier = Modifier.size(18.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale })
-                Spacer(Modifier.height(3.dp))
-                Text(label, color = labelColor, fontSize = 8.sp, letterSpacing = .3.sp)
+                Box(
+                    Modifier.fillMaxWidth().height(1.dp)
+                        .background(Color.White.copy(alpha = .42f))
+                )
+                Box(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(12.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color(0x334D3E5C))
+                            )
+                        )
+                )
+            }
+            Row(Modifier.fillMaxSize().padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                destinations.forEachIndexed { index, (label, icon) ->
+                    val active = selectedIndex == index
+                    val iconScale by animateFloatAsState(
+                        targetValue = if (active) 1.12f else 1f,
+                        animationSpec = spring(dampingRatio = 0.58f, stiffness = 430f),
+                        label = "noir-nav-icon-$label"
+                    )
+                    val tint by animateColorAsState(
+                        targetValue = if (active) Color(0xFFFFF9FF) else Color(0xFFAAA5B1),
+                        animationSpec = tween(220),
+                        label = "noir-nav-tint-$label"
+                    )
+                    Column(
+                        Modifier.weight(1f).fillMaxHeight()
+                            .clip(RoundedCornerShape(24.dp))
+                            .clickable { onTab(label) }
+                            .padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            icon, contentDescription = label, tint = tint,
+                            modifier = Modifier.size(19.dp).graphicsLayer {
+                                scaleX = iconScale
+                                scaleY = iconScale
+                            }
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            label, color = tint, fontSize = 8.sp,
+                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                            letterSpacing = .25.sp
+                        )
+                    }
+                }
             }
         }
     }
