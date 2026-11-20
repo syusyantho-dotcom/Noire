@@ -1371,7 +1371,7 @@ private fun SourceBrowseScreen(
             val result = source.browse(query, 0, selectedSort, selectedState, selectedTagKey)
             catalogue = result.distinctBy { it.id }
             hasMore = result.isNotEmpty()
-            if (result.isEmpty()) error = "No titles match these catalogue filters."
+            if (result.isEmpty()) error = if (source.category.equals("HENTAI", ignoreCase = true)) {\n                "This source is marked Hentai; NOIR only displays safe-rated catalogue entries."\n            } else {\n                "No titles match these catalogue filters."\n            }
         } catch (e: Exception) {
             error = e.message ?: "Could not load this source."
         } finally {
