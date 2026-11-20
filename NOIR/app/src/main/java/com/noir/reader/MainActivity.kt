@@ -578,7 +578,7 @@ private fun CatalogueScreen(
                         Text(if (query.isBlank()) "MADE FOR YOUR NEXT OBSESSION" else "YOUR SEARCH", color = White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.25.sp)
                         Text("A universe of stories, gathered in one place", color = Muted, fontSize = 9.sp)
                     }
-                    Text("\${catalogue.size} TITLES", color = Color(0xFFBDAFCB), fontSize = 8.sp, letterSpacing = 1.sp)
+                    Text("${catalogue.size} TITLES", color = Color(0xFFBDAFCB), fontSize = 8.sp, letterSpacing = 1.sp)
                 }
             }
             when {
@@ -626,7 +626,7 @@ private fun CatalogueScreen(
                             Text("FRESH FINDS", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
                         }
                     }
-                    items(remaining.chunked(2), key = { pair -> pair.joinToString("|") { "\${it.sourceId}:\${it.id}" } }) { pair ->
+                    items(remaining.chunked(2), key = { pair -> pair.joinToString("|") { "${it.sourceId}:${it.id}" } }) { pair ->
                         Row(horizontalArrangement = Arrangement.spacedBy(11.dp)) {
                             pair.forEach { item -> Box(Modifier.weight(1f)) { CoverTile(item) { onOpen(item) } } }
                             if (pair.size == 1) Spacer(Modifier.weight(1f))
@@ -1206,7 +1206,7 @@ private fun ReaderScreen(
                 Box(Modifier.align(Alignment.TopEnd).padding(12.dp).clip(RoundedCornerShape(30.dp))
                     .background(Color(0xB51A1920)).border(1.dp, Color(0x557F788B), RoundedCornerShape(30.dp))
                     .padding(horizontal = 11.dp, vertical = 7.dp)) {
-                    Text("\${(currentPage + 1).coerceAtMost(pages.size)} / \${pages.size}", color = Color(0xFFE8E4EC), fontSize = 9.sp, letterSpacing = .8.sp)
+                    Text("${(currentPage + 1).coerceAtMost(pages.size)} / ${pages.size}", color = Color(0xFFE8E4EC), fontSize = 9.sp, letterSpacing = .8.sp)
                 }
             }
             AnimatedVisibility(visible = showReaderControls,
