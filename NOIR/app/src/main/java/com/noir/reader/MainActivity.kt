@@ -171,6 +171,9 @@ private fun NoirApp() {
     var matureContentEnabled by remember { mutableStateOf(prefs.getBoolean("mature_content_18_plus", false)) }
     SideEffect { MatureContentAccess.enabled = matureContentEnabled }
     var showAbout by remember { mutableStateOf(false) }
+    var showWhatsNew by remember { mutableStateOf(false) }
+    val whatsNewVersion = "1.4.0"
+    val shouldShowWhatsNew = remember { prefs.getString("seen_whats_new", "") != whatsNewVersion }
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Series?>(null) }
     var selectedSource by remember { mutableStateOf<MangaSource?>(null) }
@@ -341,6 +344,12 @@ private fun NoirApp() {
     }
     var loading by remember { mutableStateOf(false) }
     var showIntro by remember { mutableStateOf(launchIntro) }
+    LaunchedEffect(showIntro) {
+        if (!showIntro && shouldShowWhatsNew) {
+            delay(420)
+            showWhatsNew = true
+        }
+    }
     var error by remember { mutableStateOf<String?>(null) }
     var downloadingChapterKey by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableIntStateOf(0) }
@@ -348,10 +357,11 @@ private fun NoirApp() {
         mutableStateListOf<String>().apply { addAll(OfflineChapterStore.downloadedKeys(context)) }
     }
 
-    BackHandler(enabled = showIntro || showAbout || navigationStack.isNotEmpty() || selectedChapter != null || selectedSource != null || selected != null || tab != "Home") {
+    BackHandler(enabled = showIntro || showAbout || showWhatsNew || navigationStack.isNotEmpty() || selectedChapter != null || selectedSource != null || selected != null || tab != "Home") {
         when {
             showIntro -> showIntro = false
             showAbout -> showAbout = false
+            showWhatsNew -> { showWhatsNew = false; prefs.edit().putString("seen_whats_new", whatsNewVersion).apply() }
             else -> goBack()
         }
     }
@@ -565,12 +575,16 @@ private fun NoirApp() {
                     { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
                     { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
                     { matureContentEnabled = it; prefs.edit().putBoolean("mature_content_18_plus", it).apply() },
-                    { showAbout = true }, { navigateTab(it) })
+                    { showAbout = true }, { showWhatsNew = true }, { navigateTab(it) })
                 tab == "Home" -> HomeScreen(catalogue, loading, error, recentlyRead.toList(), saved.toList(), seriesProgress.toMap(), openSeries, { navigateTab(it) })
                 else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, matureContentEnabled, { tab = it })
             }
             }
             }
+            if (showWhatsNew) WhatsNewDialog(onDismiss = {
+                showWhatsNew = false
+                prefs.edit().putString("seen_whats_new", whatsNewVersion).apply()
+            })
             if (showAbout) AlertDialog(
                 onDismissRequest = { showAbout = false },
                 title = { Text("About NOIR", color = White) },
@@ -910,7 +924,7 @@ private fun HomeFeatureRow(series: Series, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onTab: (String) -> Unit) {
+private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit) {
     var showMatureConfirmation by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(24.dp))
@@ -923,7 +937,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
                 Text("NOIR READER", color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text("Your personal reading space", color = Muted, fontSize = 10.sp)
             }
-            Text("1.3.0", color = Silver, fontSize = 9.sp)
+            Text("1.4.0", color = Silver, fontSize = 9.sp)
         }
         Spacer(Modifier.height(26.dp))
         Text("APP SETTINGS", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
@@ -934,6 +948,12 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
         Spacer(Modifier.height(22.dp))
         Text("INFORMATION", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Panel).clickable(onClick = onWhatsNew).padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.AutoAwesome, null, tint = Color(0xFFD6C5F2))
+            Text("What’s New in NOIR", color = White, fontSize = 13.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
+            Text("1.4.0", color = Color(0xFFD6C5F2), fontSize = 9.sp)
+            Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
+        }
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Panel).clickable(onClick = onAbout).padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.Info, null, tint = Silver)
             Text("About NOIR", color = White, fontSize = 13.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
@@ -957,6 +977,60 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
         dismissButton = { TextButton(onClick = { showMatureConfirmation = false }) { Text("CANCEL", color = Muted) } },
         containerColor = Panel
     )
+}
+
+@Composable
+private fun WhatsNewDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF151419),
+        shape = RoundedCornerShape(26.dp),
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFF30263B)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.AutoAwesome, null, tint = Color(0xFFE1D2F5), modifier = Modifier.size(19.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text("NOIR  /  RELEASE NOTES", color = Color(0xFFBFAED5), fontSize = 8.sp, letterSpacing = 1.7.sp)
+                        Text("What’s New", color = White, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Box(Modifier.clip(RoundedCornerShape(20.dp)).background(Color(0xFF30263B)).padding(horizontal = 9.dp, vertical = 5.dp)) {
+                        Text("v1.4.0", color = Color(0xFFE0D1F3), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Text("A smoother reading experience starts here.", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Normal)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(15.dp)) {
+                WhatsNewItem("SMART READER", "Predictive chapter loading prepares the next chapter in the background, while nearby pages are warmed in the image cache.", "01")
+                WhatsNewItem("READING PROGRESS", "Your Home shelves and Library covers now show a live chapter progress bar and percentage.", "02")
+                WhatsNewItem("YOUR PROGRESS, SAVED", "Reading progress is stored on this device and restored when you return to your library.", "03")
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(Color(0xFF211D28)).padding(12.dp)) {
+                    Text("Made for the moments when one more chapter turns into five.", color = Color(0xFFD2C4E2), fontSize = 10.sp, lineHeight = 15.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("LET’S READ", color = Color(0xFFE0D1F3), fontWeight = FontWeight.Bold, letterSpacing = 1.sp) }
+        }
+    )
+}
+
+@Composable
+private fun WhatsNewItem(title: String, description: String, number: String) {
+    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+        Box(Modifier.size(29.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF292330)), contentAlignment = Alignment.Center) {
+            Text(number, color = Color(0xFFDCCBEF), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, color = White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text(description, color = Muted, fontSize = 10.sp, lineHeight = 15.sp)
+        }
+    }
 }
 
 @Composable
