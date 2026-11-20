@@ -709,7 +709,7 @@ private fun SourcesScreen(onTab: (String) -> Unit) {
                 val stored = JSONArray(raw)
                 (0 until stored.length()).map { index: Int -> stored.optString(index) }.toSet()
             }
-        }.getOrDefault(setOf("mangadex")))       }.getOrDefault(setOf("mangadex")))
+        }.getOrDefault(setOf("mangadex")))
     }
     LaunchedEffect(pinned) {
         val stored = JSONArray()
