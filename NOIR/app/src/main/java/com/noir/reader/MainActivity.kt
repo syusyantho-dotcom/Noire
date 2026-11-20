@@ -817,7 +817,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 15.dp, bottom = 30.dp),
-            verticalArrangement = Arrangement.spacedBy(23.dp)
+            verticalArrangement = Arrangement.spacedBy(25.dp)
         ) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(19.dp)) {
@@ -864,7 +864,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("SELECTED FOR YOU", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 1.8.sp)
                         Spacer(Modifier.weight(1f))
-                        Text("01 — 05", color = Color(0xFF77717E), fontSize = 8.sp, letterSpacing = 1.sp)
+                        Text("${String.format("%02d", heroPagerState.currentPage + 1)} / ${String.format("%02d", featuredStories.size.coerceAtLeast(1))}", color = Color(0xFF77717E), fontSize = 8.sp, letterSpacing = 1.sp)
                     }
                     HorizontalPager(
                         state = heroPagerState,
@@ -1025,7 +1025,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
 @Composable
 private fun HomeContinueCard(series: Series, history: ReadingHistoryEntry?, overallProgress: Float, onResume: () -> Unit) {
     val pageProgress = history?.let { (it.pageNumber.toFloat() / it.pageCount.coerceAtLeast(1)).coerceIn(0f, 1f) } ?: overallProgress.coerceIn(0f, 1f)
-    Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
+    Column(Modifier.animateContentSize(tween(280)), verticalArrangement = Arrangement.spacedBy(11.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("YOUR STORY IS WAITING", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 1.9.sp)
@@ -1033,7 +1033,7 @@ private fun HomeContinueCard(series: Series, history: ReadingHistoryEntry?, over
             }
             Text("RESUME ↗", color = Color(0xFFD8C5F0), fontSize = 8.sp, letterSpacing = 1.sp, modifier = Modifier.clickable(onClick = onResume).padding(bottom = 3.dp))
         }
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(listOf(Color(0xFF24212A), Color(0xFF121116), Color(0xFF19161E)))).border(1.dp, Color(0xFF3A3541), RoundedCornerShape(24.dp)).clickable(onClick = onResume).padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(listOf(Color(0xFF24212A), Color(0xFF121116), Color(0xFF19161E)))).border(1.dp, Color(0xFF3A3541), RoundedCornerShape(24.dp)).noirPressScale(onResume).padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(Modifier.width(88.dp).height(116.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFF28232E))) {
                 SeriesCover(series, Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x55000000)))))
@@ -1059,10 +1059,20 @@ private fun HomeSeriesShelf(
     progressBySeries: Map<String, Float>,
     onOpen: (Series) -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column {
-            Text(eyebrow, color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 2.sp)
-            Text(title, color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+    Column(Modifier.animateContentSize(tween(280)), verticalArrangement = Arrangement.spacedBy(13.dp)) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(eyebrow, color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 2.sp)
+                Text(title, color = White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.35).sp)
+            }
+            Box(
+                Modifier.clip(RoundedCornerShape(20.dp))
+                    .background(Color(0xFF19171E))
+                    .border(1.dp, Color(0xFF35303C), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 9.dp, vertical = 6.dp)
+            ) {
+                Text("${seriesItems.size.toString().padStart(2, '0')} TITLES", color = Color(0xFFBEB5C9), fontSize = 7.sp, letterSpacing = 1.sp)
+            }
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(end = 4.dp)) {
             items(seriesItems, key = { "shelf-${it.sourceId}-${it.id}" }) { series ->
