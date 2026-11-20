@@ -533,11 +533,11 @@ private fun NoirLogoMark(size: androidx.compose.ui.unit.Dp) {
         contentAlignment = Alignment.Center
     ) {
         Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0x665D566F), Color.Transparent), radius = size.value * 0.85f)))
-        Text("N", color = Color(0xFFF0EDF5), fontSize = size.value * .73f.sp, fontWeight = FontWeight.Normal,
+        Text("N", color = Color(0xFFF0EDF5), fontSize = (size.value * .73f).sp, fontWeight = FontWeight.Normal,
             fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
         Box(Modifier.width(size * 1.02f).height(size * .43f).rotate(-25f)
             .border((size.value / 85f).coerceAtLeast(.8f).dp, Color(0xFFD2C9E6).copy(alpha = .88f), CircleShape))
-        Text("✦", color = Color(0xFFF3F0FA), fontSize = size.value * .18f.sp,
+        Text("✦", color = Color(0xFFF3F0FA), fontSize = (size.value * .18f).sp,
             modifier = Modifier.align(Alignment.TopEnd).padding(top = size * .14f, end = size * .16f))
         Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(.58f).height(size * .13f)
             .rotate(-25f).background(Brush.horizontalGradient(listOf(Color.Transparent, Color(0x557F7694), Color.Transparent))))
