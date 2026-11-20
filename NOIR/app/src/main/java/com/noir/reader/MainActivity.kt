@@ -445,42 +445,165 @@ private fun DetailScreen(
     series: Series, chapters: List<Chapter>, saved: Boolean, loading: Boolean, error: String?,
     onBack: () -> Unit, onSave: () -> Unit, onChapter: (Chapter) -> Unit
 ) {
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, null, tint = White) }
-            Text("SERIES DETAILS", color = Muted, fontSize = 10.sp, letterSpacing = 2.sp)
+    var synopsisExpanded by remember(series.id) { mutableStateOf(false) }
+    val synopsis = series.description.ifBlank { "No synopsis is available for this title yet." }
+    val synopsisNeedsMore = synopsis.length > 190
+    val synopsisText = if (!synopsisExpanded && synopsisNeedsMore) synopsis.take(190).substringBeforeLast(" ") + "…" else synopsis
+
+    Column(Modifier.fillMaxSize().background(Black).statusBarsPadding()) {
+        Row(
+            Modifier.fillMaxWidth().height(54.dp).padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Rounded.ArrowBack, null, tint = White)
+            }
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = onSave) { Icon(if (saved) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder, null, tint = Silver) }
+            Text(
+                series.title.uppercase(),
+                color = White,
+                fontSize = 10.sp,
+                letterSpacing = 3.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(5f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onSave) {
+                Icon(if (saved) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder, null, tint = if (saved) Color(0xFFD6C5F2) else White)
+            }
         }
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 28.dp)) {
+
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(bottom = 30.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
             item {
-                Row(verticalAlignment = Alignment.Top) {
-                    Cover(series.coverUrl, Modifier.size(126.dp, 176.dp))
-                    Column(Modifier.weight(1f).padding(start = 15.dp)) {
-                        Text(series.title, color = White, fontSize = 22.sp, fontWeight = FontWeight.Bold, lineHeight = 27.sp)
-                        Spacer(Modifier.height(10.dp))
-                        Text("SOURCE / ${series.sourceName.uppercase()}", color = Silver, fontSize = 9.sp, letterSpacing = 1.sp)
-                        Spacer(Modifier.height(10.dp))
-                        Text(if (saved) "IN YOUR LIBRARY" else "NOT IN LIBRARY", color = Muted, fontSize = 9.sp)
+                Box(
+                    Modifier.fillMaxWidth().height(340.dp)
+                        .background(Color(0xFF17151C))
+                ) {
+                    Cover(series.coverUrl, Modifier.fillMaxSize())
+                    Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.verticalGradient(
+                                listOf(Color(0x22000000), Color(0x12000000), Color(0xB8070708), Black)
+                            )
+                        )
+                    )
+                    Column(
+                        Modifier.align(Alignment.BottomStart).fillMaxWidth()
+                            .padding(horizontal = 25.dp, vertical = 22.dp)
+                    ) {
+                        Text(
+                            "MANGA  /  MANHWA  /  SERIES",
+                            color = Color(0xFFD6C5F2),
+                            fontSize = 8.sp,
+                            letterSpacing = 2.2.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(9.dp))
+                        Text(
+                            series.title,
+                            color = White,
+                            fontSize = 27.sp,
+                            lineHeight = 32.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(series.sourceName.uppercase(), color = Silver, fontSize = 9.sp, letterSpacing = 1.5.sp)
+                            Spacer(Modifier.width(9.dp))
+                            Box(Modifier.size(3.dp).clip(CircleShape).background(Muted))
+                            Spacer(Modifier.width(9.dp))
+                            Text(if (saved) "IN YOUR LIBRARY" else "NOT IN LIBRARY", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
+                        }
                     }
                 }
-                Spacer(Modifier.height(20.dp))
-                Text("SYNOPSIS", color = Silver, fontSize = 10.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
-                Text(series.description, color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
-                Spacer(Modifier.height(24.dp))
-                Text("CHAPTERS", color = White, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-                Spacer(Modifier.height(12.dp))
             }
-            if (loading && chapters.isEmpty()) item { LoadingState("Loading chapters…") }
-            if (error != null) item { ErrorState(error) }
-            items(chapters, key = { it.id }) { chapter ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp).clip(RoundedCornerShape(13.dp)).background(Panel).clickable { onChapter(chapter) }.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(chapter.name, color = White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        Text("ENGLISH · ${series.sourceName}", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
+
+            item {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 25.dp, vertical = 22.dp)) {
+                    Text("OVERVIEW", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 2.2.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        synopsisText,
+                        color = Color(0xFFB5B2BA),
+                        fontSize = 13.sp,
+                        lineHeight = 21.sp
+                    )
+                    if (synopsisNeedsMore) {
+                        Text(
+                            if (synopsisExpanded) "SHOW LESS  ▴" else "SHOW MORE  ▾",
+                            color = White,
+                            fontSize = 9.sp,
+                            letterSpacing = 1.4.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.clickable { synopsisExpanded = !synopsisExpanded }.padding(top = 9.dp)
+                        )
                     }
-                    Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
+                }
+            }
+
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 25.dp, end = 25.dp, top = 5.dp, bottom = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("CONTINUE THE STORY", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 2.sp)
+                        Spacer(Modifier.height(5.dp))
+                        Text("Chapters", color = White, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Text(
+                        if (chapters.isNotEmpty()) "${chapters.size} AVAILABLE" else "MANGADEX",
+                        color = Muted,
+                        fontSize = 8.sp,
+                        letterSpacing = 1.2.sp
+                    )
+                }
+            }
+
+            if (loading && chapters.isEmpty()) {
+                item { LoadingState("Loading chapters…") }
+            }
+            if (error != null) {
+                item { ErrorState(error) }
+            }
+            if (!loading && error == null && chapters.isEmpty()) {
+                item { EmptyState("No chapters available", "There are no English chapters listed for this series yet.") }
+            }
+            items(chapters, key = { it.id }) { chapter ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 5.dp)
+                        .clip(RoundedCornerShape(15.dp))
+                        .background(Color(0xFF17171A))
+                        .clickable { onChapter(chapter) }
+                        .padding(horizontal = 17.dp, vertical = 17.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(chapter.name, color = White, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(5.dp))
+                        Text(
+                            "${chapter.language.uppercase()}  ·  ${series.sourceName.uppercase()}",
+                            color = Muted,
+                            fontSize = 8.sp,
+                            letterSpacing = 1.2.sp
+                        )
+                    }
+                    Icon(Icons.Rounded.PlayArrow, null, tint = Color(0xFFD6C5F2), modifier = Modifier.size(23.dp))
+                }
+            }
+
+            item {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 25.dp, vertical = 24.dp)) {
+                    Text("NOIR  •  MANGA  •  MANHWA  •  MORE", color = Color(0xFF625D69), fontSize = 8.sp, letterSpacing = 2.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 }
             }
         }
