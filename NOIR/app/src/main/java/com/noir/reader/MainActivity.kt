@@ -1119,57 +1119,29 @@ private fun DetailScreen(
 }
 
 @Composable
-private fun ReaderPageImage(
-    pageUrl: String,
-    modifier: Modifier = Modifier,
-    contentScale: ContentScale
-) {
+private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, contentScale: ContentScale) {
     var zoom by remember(pageUrl) { mutableFloatStateOf(1f) }
     var panX by remember(pageUrl) { mutableFloatStateOf(0f) }
     var panY by remember(pageUrl) { mutableFloatStateOf(0f) }
-
-    AsyncImage(
-        model = pageUrl,
-        contentDescription = "Comic page",
-        contentScale = contentScale,
+    AsyncImage(model = pageUrl, contentDescription = "Comic page", contentScale = contentScale,
         modifier = modifier
-            .graphicsLayer {
-                scaleX = zoom
-                scaleY = zoom
-                translationX = panX
-                translationY = panY
-            }
-            // Only intercept drag gestures while zoomed. At normal scale,
-            // vertical gestures must reach LazyColumn so the reader can scroll.
+            .then(if (zoom > 1.01f) Modifier.graphicsLayer {
+                scaleX = zoom; scaleY = zoom; translationX = panX; translationY = panY
+            } else Modifier)
             .pointerInput(pageUrl, zoom > 1.01f) {
-                if (zoom > 1.01f) {
-                    detectTransformGestures { _, pan, gestureZoom, _ ->
-                        val nextZoom = (zoom * gestureZoom).coerceIn(1f, 4f)
-                        zoom = nextZoom
-                        if (nextZoom <= 1.01f) {
-                            panX = 0f
-                            panY = 0f
-                        } else {
-                            panX += pan.x
-                            panY += pan.y
-                        }
-                    }
+                if (zoom > 1.01f) detectTransformGestures { _, pan, gestureZoom, _ ->
+                    val nextZoom = (zoom * gestureZoom).coerceIn(1f, 4f)
+                    zoom = nextZoom
+                    if (nextZoom <= 1.01f) { panX = 0f; panY = 0f }
+                    else { panX += pan.x; panY += pan.y }
                 }
             }
             .pointerInput(pageUrl) {
-                detectTapGestures(
-                    onDoubleTap = {
-                        if (zoom > 1.05f) {
-                            zoom = 1f
-                            panX = 0f
-                            panY = 0f
-                        } else {
-                            zoom = 2.25f
-                        }
-                    }
-                )
-            }
-    )
+                detectTapGestures(onDoubleTap = {
+                    if (zoom > 1.05f) { zoom = 1f; panX = 0f; panY = 0f }
+                    else zoom = 2.25f
+                })
+            })
 }
 
 @Composable
@@ -1178,157 +1150,126 @@ private fun ReaderScreen(
     initialPage: Int, readerMode: String, onModeChange: (String) -> Unit,
     onProgress: (Int) -> Unit, onBack: () -> Unit
 ) {
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage)
-    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
-        initialPage = initialPage.coerceAtLeast(0),
-        pageCount = { pages.size }
-    )
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage.coerceAtLeast(0))
+    val pagerState = androidx.compose.foundation.pager.rememberPagerState(initialPage = initialPage.coerceAtLeast(0), pageCount = { pages.size })
     var showModeMenu by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showReaderControls by remember { mutableStateOf(true) }
     var dimAmount by remember { mutableFloatStateOf(0f) }
     var fitToWidth by remember { mutableStateOf(true) }
     val readerScope = rememberCoroutineScope()
+    val isPaged = readerMode == "Horizontal" || readerMode == "Right to left"
 
     LaunchedEffect(pages.size, initialPage, readerMode) {
         if (pages.isNotEmpty()) {
             val target = initialPage.coerceIn(0, pages.lastIndex)
-            if (readerMode == "Horizontal" || readerMode == "Right to left") pagerState.scrollToPage(target)
-            else listState.scrollToItem(target)
+            if (isPaged) pagerState.scrollToPage(target) else listState.scrollToItem(target)
         }
     }
     LaunchedEffect(readerMode, listState.firstVisibleItemIndex, pagerState.currentPage, pages.size) {
         if (pages.isNotEmpty()) {
-            val current = if (readerMode == "Horizontal" || readerMode == "Right to left") pagerState.currentPage else listState.firstVisibleItemIndex
+            val current = if (isPaged) pagerState.currentPage else listState.firstVisibleItemIndex
             onProgress(current.coerceIn(0, pages.lastIndex))
         }
     }
-    val currentPage = if (readerMode == "Horizontal" || readerMode == "Right to left") pagerState.currentPage else listState.firstVisibleItemIndex
+    val currentPage = if (isPaged) pagerState.currentPage else listState.firstVisibleItemIndex
+    val movePage: (Int) -> Unit = { direction ->
+        if (pages.isNotEmpty()) readerScope.launch {
+            val target = (currentPage + direction).coerceIn(0, pages.lastIndex)
+            if (isPaged) pagerState.animateScrollToPage(target) else listState.animateScrollToItem(target)
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding()) {
-        Row(
-            Modifier.fillMaxWidth().background(Black).padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) { Icon(Icons.Rounded.Close, null, tint = White) }
-            Column(Modifier.weight(1f)) {
-                Text(series?.title ?: "NOIR READER", color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                Text(chapter.name, color = Muted, fontSize = 9.sp, maxLines = 1)
-            }
-            IconButton(onClick = { showSettings = true }) {
-                Icon(Icons.Rounded.Tune, "Reader settings", tint = Silver)
-            }
-            Box {
-                Text(
-                    if (pages.isEmpty()) readerMode.uppercase() else "${(currentPage + 1).coerceAtMost(pages.size)} / ${pages.size}",
-                    color = Silver, fontSize = 8.sp, letterSpacing = 1.sp,
-                    modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable { showModeMenu = true }.padding(9.dp)
-                )
-                DropdownMenu(expanded = showModeMenu, onDismissRequest = { showModeMenu = false }, containerColor = Panel) {
-                    listOf("Vertical", "Horizontal", "Right to left", "Webtoon").forEach { mode ->
-                        DropdownMenuItem(
-                            text = { Text(mode, color = if (readerMode == mode) Color(0xFFD6C5F2) else White) },
-                            onClick = { onModeChange(mode); showModeMenu = false }
-                        )
-                    }
-                }
-            }
-        }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 loading && pages.isEmpty() -> LoadingState("Loading chapter pages…")
                 error != null -> ErrorState(error)
                 pages.isEmpty() -> EmptyState("No pages available", "This chapter may not have readable pages.")
-                readerMode == "Horizontal" || readerMode == "Right to left" ->
-                    androidx.compose.foundation.pager.HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.fillMaxSize(),
-                        reverseLayout = readerMode == "Right to left"
-                    ) { index ->
-                        ReaderPageImage(
-                            pageUrl = pages[index],
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = if (fitToWidth) ContentScale.FillWidth else ContentScale.Fit
-                        )
-                    }
-                else -> LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(if (readerMode == "Webtoon") 0.dp else 2.dp)
-                ) {
-                    items(pages) { page ->
-                        ReaderPageImage(
-                            pageUrl = page,
-                            modifier = Modifier.fillMaxWidth(),
-                            contentScale = ContentScale.FillWidth
-                        )
+                isPaged -> androidx.compose.foundation.pager.HorizontalPager(
+                    state = pagerState, modifier = Modifier.fillMaxSize(),
+                    reverseLayout = readerMode == "Right to left", key = { index -> "reader-page-$index" }
+                ) { index ->
+                    ReaderPageImage(pageUrl = pages[index], modifier = Modifier.fillMaxSize(),
+                        contentScale = if (fitToWidth) ContentScale.FillWidth else ContentScale.Fit)
+                }
+                else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(if (readerMode == "Webtoon") 0.dp else 1.dp),
+                    contentPadding = PaddingValues(bottom = 18.dp)) {
+                    items(count = pages.size, key = { index -> "reader-page-$index" }, contentType = { "reader-page" }) { index ->
+                        ReaderPageImage(pageUrl = pages[index], modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
                     }
                 }
             }
-            if (dimAmount > 0f && pages.isNotEmpty()) {
-                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dimAmount)))
+            if (dimAmount > 0f && pages.isNotEmpty()) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dimAmount)))
+            if (pages.isNotEmpty()) {
+                Box(Modifier.align(Alignment.TopEnd).padding(12.dp).clip(RoundedCornerShape(30.dp))
+                    .background(Color(0xB51A1920)).border(1.dp, Color(0x557F788B), RoundedCornerShape(30.dp))
+                    .padding(horizontal = 11.dp, vertical = 7.dp)) {
+                    Text("\${(currentPage + 1).coerceAtMost(pages.size)} / \${pages.size}", color = Color(0xFFE8E4EC), fontSize = 9.sp, letterSpacing = .8.sp)
+                }
             }
-        }
-        if (pages.isNotEmpty()) {
-            Row(
-                Modifier.fillMaxWidth().background(Color(0xFF101013)).padding(horizontal = 16.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Rounded.BrightnessLow, null, tint = Muted, modifier = Modifier.size(16.dp))
-                Slider(
-                    value = dimAmount,
-                    onValueChange = { dimAmount = it },
-                    valueRange = 0f..0.65f,
-                    modifier = Modifier.weight(1f).padding(horizontal = 9.dp)
-                )
-                Text("DIM", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
+            AnimatedVisibility(visible = showReaderControls,
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 7.dp),
+                enter = fadeIn(tween(150)) + slideInHorizontally(initialOffsetX = { -it / 2 }, animationSpec = tween(180)),
+                exit = fadeOut(tween(120)) + slideOutHorizontally(targetOffsetX = { -it / 2 }, animationSpec = tween(150))) {
+                Column(Modifier.clip(RoundedCornerShape(28.dp))
+                    .background(Brush.verticalGradient(listOf(Color(0xE83A3442), Color(0xE8191820), Color(0xE82A2632))))
+                    .border(1.dp, Color(0x777F788B), RoundedCornerShape(28.dp))
+                    .padding(horizontal = 3.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconButton(onClick = { showReaderControls = false }) { Icon(Icons.Rounded.ChevronLeft, "Hide reader controls", tint = Color(0xFFF0ECF4)) }
+                    HorizontalDivider(color = Color(0x557F788B), modifier = Modifier.width(27.dp))
+                    IconButton(onClick = { movePage(-1) }, enabled = currentPage > 0) {
+                        Icon(if (isPaged) Icons.Rounded.ChevronLeft else Icons.Rounded.KeyboardArrowUp, "Previous page", tint = if (currentPage > 0) White else Muted)
+                    }
+                    IconButton(onClick = { movePage(1) }, enabled = pages.isNotEmpty() && currentPage < pages.lastIndex) {
+                        Icon(if (isPaged) Icons.Rounded.ChevronRight else Icons.Rounded.KeyboardArrowDown, "Next page", tint = if (currentPage < pages.lastIndex) White else Muted)
+                    }
+                    Box {
+                        IconButton(onClick = { showModeMenu = true }) { Icon(Icons.Rounded.ViewCarousel, "Reading mode", tint = Silver) }
+                        DropdownMenu(expanded = showModeMenu, onDismissRequest = { showModeMenu = false }, containerColor = Panel) {
+                            listOf("Vertical", "Horizontal", "Right to left", "Webtoon").forEach { mode ->
+                                DropdownMenuItem(text = { Text(mode, color = if (readerMode == mode) Color(0xFFD6C5F2) else White) },
+                                    onClick = { onModeChange(mode); showModeMenu = false })
+                            }
+                        }
+                    }
+                    IconButton(onClick = { showSettings = true }) { Icon(Icons.Rounded.Tune, "Reader settings", tint = Silver) }
+                    HorizontalDivider(color = Color(0x557F788B), modifier = Modifier.width(27.dp))
+                    IconButton(onClick = onBack) { Icon(Icons.Rounded.Close, "Close reader", tint = Color(0xFFE4DCEB)) }
+                }
             }
-            if (readerMode == "Horizontal" || readerMode == "Right to left") {
-                Row(
-                    Modifier.fillMaxWidth().background(Color(0xFF101013)).padding(horizontal = 14.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = { readerScope.launch { pagerState.animateScrollToPage((pagerState.currentPage - 1).coerceAtLeast(0)) } }, enabled = pagerState.currentPage > 0) {
-                        Text("PREVIOUS", color = Silver, fontSize = 9.sp)
-                    }
-                    Spacer(Modifier.weight(1f))
-                    Text("${currentPage + 1} / ${pages.size}", color = Muted, fontSize = 9.sp)
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { readerScope.launch { pagerState.animateScrollToPage((pagerState.currentPage + 1).coerceAtMost(pages.lastIndex)) } }, enabled = pagerState.currentPage < pages.lastIndex) {
-                        Text("NEXT", color = Silver, fontSize = 9.sp)
-                    }
+            if (!showReaderControls) {
+                Box(Modifier.align(Alignment.CenterStart).padding(start = 3.dp).size(width = 27.dp, height = 58.dp)
+                    .clip(RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp)).background(Color(0xB51A1920))
+                    .border(1.dp, Color(0x557F788B), RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp))
+                    .clickable { showReaderControls = true }, contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.ChevronRight, "Show reader controls", tint = Color(0xFFE9E4EF), modifier = Modifier.size(18.dp))
                 }
             }
         }
     }
 
-    if (showSettings) {
-        AlertDialog(
-            onDismissRequest = { showSettings = false },
-            containerColor = Panel,
-            title = { Text("Reader settings", color = White, fontWeight = FontWeight.SemiBold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("PAGE DISPLAY", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Fit page to width", color = White, fontSize = 12.sp)
-                            Text("Scale pages to the available reader width", color = Muted, fontSize = 10.sp)
-                        }
-                        Switch(checked = fitToWidth, onCheckedChange = { fitToWidth = it })
+    if (showSettings) AlertDialog(onDismissRequest = { showSettings = false }, containerColor = Panel,
+        title = { Text("Reader settings", color = White, fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("PAGE DISPLAY", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Fit page to width", color = White, fontSize = 12.sp)
+                        Text("Scale pages to the available reader width", color = Muted, fontSize = 10.sp)
                     }
-                    Text("ZOOM", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp)
-                    Text("Pinch with two fingers to zoom. Double-tap a page to zoom in or reset. Drag to pan while zoomed.", color = Muted, fontSize = 11.sp, lineHeight = 17.sp)
-                    Text("SCREEN DIMMING", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp)
-                    Slider(value = dimAmount, onValueChange = { dimAmount = it }, valueRange = 0f..0.65f)
+                    Switch(checked = fitToWidth, onCheckedChange = { fitToWidth = it })
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { showSettings = false }) { Text("DONE", color = Color(0xFFD6C5F2)) }
+                Text("ZOOM", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp)
+                Text("Double-tap a page to zoom in or reset. Drag to pan while zoomed.", color = Muted, fontSize = 11.sp, lineHeight = 17.sp)
+                Text("SCREEN DIMMING", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp)
+                Slider(value = dimAmount, onValueChange = { dimAmount = it }, valueRange = 0f..0.65f)
             }
-        )
-    }
-}
-@Composable
+        },
+        confirmButton = { TextButton(onClick = { showSettings = false }) { Text("DONE", color = Color(0xFFD6C5F2)) } })
+}@Composable
 private fun SourcesScreen(
     enabledSourceIds: Set<String>,
     onToggleEnabled: (String) -> Unit,
