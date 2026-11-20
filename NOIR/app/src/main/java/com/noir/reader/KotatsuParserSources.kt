@@ -18,6 +18,7 @@ import kotlinx.coroutines.withTimeout
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.HttpUrl
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -103,7 +104,9 @@ private class KotatsuMangaSource(
         val selectedTag = tagKey?.let { key -> filterOptions?.availableTags?.firstOrNull { it.key == key } }
         val filter = MangaListFilter(
             query = query?.takeIf { it.isNotBlank() },
-            contentRating = setOf(ContentRating.SAFE, ContentRating.SUGGESTIVE),
+            // Keep the parser filter to one rating: several community parsers reject multi-rating filters.
+            // NOIR intentionally does not expose adult-rated catalogue entries.
+            contentRating = setOf(ContentRating.SAFE),
             states = selectedState?.let { setOf(it) } ?: emptySet(),
             tags = selectedTag?.let { setOf(it) } ?: emptySet()
         )
@@ -199,6 +202,9 @@ private class NoirParserContext(context: Context) : MangaLoaderContext() {
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(40, TimeUnit.SECONDS)
         .callTimeout(60, TimeUnit.SECONDS)
+        // Some community sites reset HTTP/2 streams; HTTP/1.1 is more compatible.
+        .protocols(listOf(Protocol.HTTP_1_1))
+        .retryOnConnectionFailure(true)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
