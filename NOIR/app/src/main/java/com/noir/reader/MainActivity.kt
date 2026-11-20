@@ -566,7 +566,7 @@ private fun NoirApp() {
                     { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
                     { matureContentEnabled = it; prefs.edit().putBoolean("mature_content_18_plus", it).apply() },
                     { showAbout = true }, { navigateTab(it) })
-                tab == "Home" -> HomeScreen(catalogue, loading, error, recentlyRead.toList(), saved.toList(), openSeries, { navigateTab(it) })
+                tab == "Home" -> HomeScreen(catalogue, loading, error, recentlyRead.toList(), saved.toList(), seriesProgress.toMap(), openSeries, { navigateTab(it) })
                 else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, matureContentEnabled, { tab = it })
             }
             }
@@ -705,7 +705,7 @@ private fun CatalogueScreen(
 }
 
 @Composable
-private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?, recentlyRead: List<Series>, saved: List<Series>, onOpen: (Series) -> Unit, onTab: (String) -> Unit) {
+private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?, recentlyRead: List<Series>, saved: List<Series>, progressBySeries: Map<String, Float>, onOpen: (Series) -> Unit, onTab: (String) -> Unit) {
     val featured = catalogue.firstOrNull()
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         LazyColumn(
@@ -751,7 +751,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                 }
             }
             if (recentlyRead.isNotEmpty()) item {
-                HomeSeriesShelf("PICK UP AGAIN", "YOUR READING JOURNEY", recentlyRead.take(10), "OPEN SERIES", onOpen)
+                HomeSeriesShelf("PICK UP AGAIN", "YOUR READING JOURNEY", recentlyRead.take(10), "OPEN SERIES", progressBySeries, onOpen)
             }
             item {
                 Row(verticalAlignment = Alignment.Bottom) {
@@ -791,7 +791,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                 }
             }
             if (saved.isNotEmpty()) item {
-                HomeSeriesShelf("YOUR COLLECTION", "SAVED TO YOUR LIBRARY", saved.take(10), "VIEW TITLE", onOpen)
+                HomeSeriesShelf("YOUR COLLECTION", "SAVED TO YOUR LIBRARY", saved.take(10), "VIEW TITLE", progressBySeries, onOpen)
             }
             item {
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Brush.linearGradient(listOf(Color(0xFF262131), Color(0xFF111014)))).border(1.dp, Color(0xFF393342), RoundedCornerShape(22.dp)).clickable { onTab("Discover") }.padding(19.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -818,6 +818,7 @@ private fun HomeSeriesShelf(
     eyebrow: String,
     seriesItems: List<Series>,
     actionLabel: String,
+    progressBySeries: Map<String, Float>,
     onOpen: (Series) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -834,6 +835,7 @@ private fun HomeSeriesShelf(
                     Box(Modifier.fillMaxWidth().height(178.dp).background(Color(0xFF211D27))) {
                         SeriesCover(series, Modifier.fillMaxSize())
                         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000)))))
+                        CoverProgressOverlay(progressBySeries["${series.sourceId}:${series.id}"] ?: 0f, Modifier.align(Alignment.BottomCenter))
                     }
                     Column(Modifier.padding(horizontal = 9.dp, vertical = 9.dp)) {
                         Text(series.title, color = White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, lineHeight = 13.sp, overflow = TextOverflow.Ellipsis)
@@ -856,7 +858,7 @@ private fun CoverProgressOverlay(progress: Float, modifier: Modifier = Modifier)
     if (progress > 0f) {
         Column(modifier.fillMaxWidth().background(Color(0xC9070709)).padding(horizontal = 7.dp, vertical = 6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("READING", color = Color(0xFFE9DDF5), fontSize = 7.sp, letterSpacing = .9.sp, fontWeight = FontWeight.Bold)
+                Text("CHAPTER", color = Color(0xFFE9DDF5), fontSize = 7.sp, letterSpacing = .9.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.weight(1f))
                 Text("${(progress.coerceIn(0f, 1f) * 100).roundToInt()}%", color = White, fontSize = 7.sp, fontWeight = FontWeight.SemiBold)
             }
