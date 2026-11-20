@@ -182,7 +182,7 @@ private fun NoirApp() {
             } finally { loading = false }
         }
     }
-    LaunchedEffect(selected?.id) {
+    LaunchedEffect(selected?.id, selected?.sourceId) {
         val item = selected ?: return@LaunchedEffect
         chapters = emptyList()
         loading = true
@@ -210,11 +210,11 @@ private fun NoirApp() {
                     onProgress = { page -> readingProgress[selectedChapter!!.id] = page },
                     onBack = { selectedChapter = null })
                 selected != null -> DetailScreen(
-                    selected!!, chapters, saved.any { it.id == selected!!.id }, loading, error,
+                    selected!!, chapters, saved.any { it.id == selected!!.id && it.sourceId == selected!!.sourceId }, loading, error,
                     onBack = { selected = null },
                     onSave = {
                         val item = selected!!
-                        if (saved.any { it.id == item.id }) saved.removeAll { it.id == item.id } else saved.add(item)
+                        if (saved.any { it.id == item.id && it.sourceId == item.sourceId }) saved.removeAll { it.id == item.id && it.sourceId == item.sourceId } else saved.add(item)
                     },
                     onChapter = { selectedChapter = it }
                 )
@@ -284,7 +284,7 @@ private fun CatalogueScreen(
                     horizontalArrangement = Arrangement.spacedBy(13.dp),
                     contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
-                    items(catalogue, key = { it.id }) { item -> CoverTile(item) { onOpen(item) } }
+                    items(catalogue, key = { "${it.sourceId}-${it.id}" }) { item -> CoverTile(item) { onOpen(item) } }
                 }
             }
         }
@@ -433,7 +433,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, onIntroSoun
                 Text("NOIR READER", color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text("Your personal reading space", color = Muted, fontSize = 10.sp)
             }
-            Text("0.5.0", color = Silver, fontSize = 9.sp)
+            Text("1.0.0", color = Silver, fontSize = 9.sp)
         }
         Spacer(Modifier.height(26.dp))
         Text("APP SETTINGS", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
@@ -615,7 +615,7 @@ private fun DetailScreen(
                         Text("Chapters", color = White, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
                     }
                     Text(
-                        if (chapters.isNotEmpty()) "${chapters.size} AVAILABLE" else "MANGADEX",
+                        if (chapters.isNotEmpty()) "${chapters.size} AVAILABLE" else series.sourceName.uppercase(),
                         color = Muted,
                         fontSize = 8.sp,
                         letterSpacing = 1.2.sp
@@ -763,7 +763,7 @@ private fun SourcesScreen(onTab: (String) -> Unit) {
                         Spacer(Modifier.width(10.dp))
                         Text("YOUR MANGA NETWORK", color = Color(0xFFE2D6EA), fontSize = 9.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.weight(1f))
-                        Text("01 CONNECTED", color = Color(0xFFB9D3B1), fontSize = 8.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold)
+                        Text("${SourceRegistry.sources.size.toString().padStart(2, '0')} CONNECTED", color = Color(0xFFB9D3B1), fontSize = 8.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold)
                     }
                     Spacer(Modifier.height(17.dp))
                     Text("Read beyond\nthe boundaries.", color = White, fontSize = 25.sp, lineHeight = 29.sp, fontWeight = FontWeight.SemiBold)
