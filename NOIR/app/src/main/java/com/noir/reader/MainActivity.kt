@@ -18,7 +18,10 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -374,8 +377,21 @@ private fun NoirApp() {
     }
     var routeVisible by remember(routeKey) { mutableStateOf(false) }
     LaunchedEffect(routeKey) { routeVisible = true }
-    val routeAlpha by animateFloatAsState(if (routeVisible) 1f else 0f, tween(190), label = "noir-route-fade")
-    val routeScale by animateFloatAsState(if (routeVisible) 1f else 0.985f, tween(220), label = "noir-route-scale")
+    val routeAlpha by animateFloatAsState(
+        if (routeVisible) 1f else 0f,
+        tween(230, easing = FastOutSlowInEasing),
+        label = "noir-route-fade"
+    )
+    val routeScale by animateFloatAsState(
+        if (routeVisible) 1f else 0.982f,
+        spring(dampingRatio = 0.88f, stiffness = 280f),
+        label = "noir-route-scale"
+    )
+    val routeOffset by animateFloatAsState(
+        if (routeVisible) 0f else 16f,
+        tween(280, easing = FastOutSlowInEasing),
+        label = "noir-route-slide"
+    )
 
     LaunchedEffect(query, tab, activeSourceIds) {
         if (selected == null && selectedChapter == null && (tab == "Discover" || tab == "Home")) {
@@ -483,6 +499,7 @@ private fun NoirApp() {
                 alpha = routeAlpha
                 scaleX = routeScale
                 scaleY = routeScale
+                translationY = routeOffset * density
             }) {
             key(routeKey) {
             when {
@@ -855,7 +872,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                 else -> item {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(end = 4.dp)) {
                         items(catalogue.take(12), key = { "${it.sourceId}-${it.id}" }) { series ->
-                            Column(Modifier.width(132.dp).clickable { onOpen(series) }) {
+                            Column(Modifier.width(132.dp).noirPressScale { onOpen(series) }) {
                                 Box(Modifier.fillMaxWidth().height(178.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF201D26))) {
                                     SeriesCover(series, Modifier.fillMaxSize())
                                     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x22000000)))))
@@ -915,7 +932,7 @@ private fun HomeSeriesShelf(
             items(seriesItems, key = { "shelf-${it.sourceId}-${it.id}" }) { series ->
                 Column(
                     Modifier.width(132.dp).clip(RoundedCornerShape(18.dp))
-                        .background(Color(0xFF141318)).clickable { onOpen(series) }
+                        .background(Color(0xFF141318)).noirPressScale { onOpen(series) }
                 ) {
                     Box(Modifier.fillMaxWidth().height(178.dp).background(Color(0xFF211D27))) {
                         SeriesCover(series, Modifier.fillMaxSize())
@@ -930,6 +947,39 @@ private fun HomeSeriesShelf(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun Modifier.noirPressScale(onClick: () -> Unit): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.975f else 1f,
+        animationSpec = spring(dampingRatio = 0.68f, stiffness = 520f),
+        label = "noir-press-scale"
+    )
+    return this.graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.clickable(
+        interactionSource = interactionSource,
+        indication = androidx.compose.material.ripple.rememberRipple(bounded = true),
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun NoirReveal(
+    delayMillis: Int = 0,
+    content: @Composable () -> Unit
+) {
+    AnimatedVisibility(
+        visible = true,
+        enter = fadeIn(tween(360, delayMillis = delayMillis)) +
+            slideInVertically(tween(420, delayMillis = delayMillis, easing = FastOutSlowInEasing)) { it / 14 }
+    ) {
+        content()
     }
 }
 
@@ -959,7 +1009,7 @@ private fun CoverProgressOverlay(progress: Float, modifier: Modifier = Modifier)
 private fun CoverTile(series: Series, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().animateContentSize(tween(220))
         .clip(RoundedCornerShape(19.dp)).background(Color(0xFF121116))
-        .clickable(onClick = onClick).padding(bottom = 11.dp)) {
+        .noirPressScale(onClick).padding(bottom = 11.dp)) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.66f).clip(RoundedCornerShape(17.dp)).background(Color(0xFF1C1A21))) {
             SeriesCover(series, Modifier.fillMaxSize())
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x18000000)))))
