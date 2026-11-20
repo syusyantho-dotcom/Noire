@@ -53,7 +53,7 @@ class MangaDexSource : MangaSource {
     private suspend fun get(path: String): JSONObject = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url("https://api.mangadex.org$path")
-            .header("User-Agent", "NOIR-Reader/0.5 (Android)")
+            .header("User-Agent", "NOIR-Reader/1.0 (Android)")
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("Source returned HTTP ${response.code}")
@@ -107,22 +107,40 @@ class MangaDexSource : MangaSource {
     override suspend fun search(query: String, page: Int) = loadSeries(query, page)
 
     override suspend fun chapters(series: Series): List<Chapter> {
-        val url = "https://api.mangadex.org/manga/${series.id}/feed".toHttpUrl().newBuilder()
-            .addQueryParameter("limit", "100")
-            .addQueryParameter("translatedLanguage[]", "en")
-            .addQueryParameter("order[chapter]", "desc")
-            .addQueryParameter("order[volume]", "desc")
-            .addQueryParameter("includes[]", "scanlation_group")
-            .build()
-        val json = get(url.toString().substringAfter("https://api.mangadex.org"))
-        val data = json.optJSONArray("data") ?: return emptyList()
-        return (0 until data.length()).mapNotNull { i ->
-            val item = data.optJSONObject(i) ?: return@mapNotNull null
-            val a = item.optJSONObject("attributes") ?: JSONObject()
-            val number = a.optString("chapter", "?")
-            val title = a.optString("title")
-            Chapter(item.optString("id"), if (title.isBlank()) "Chapter $number" else "Chapter $number · $title", number, a.optString("translatedLanguage", "en"))
+        // MangaDex caps feed responses; page through the complete feed instead of
+        // silently hiding everything after the first 100 chapters.
+        val result = mutableListOf<Chapter>()
+        var offset = 0
+        val pageSize = 500
+        while (true) {
+            val builder = "https://api.mangadex.org/manga/${series.id}/feed".toHttpUrl().newBuilder()
+                .addQueryParameter("limit", pageSize.toString())
+                .addQueryParameter("offset", offset.toString())
+                // English and Indonesian translations are both useful defaults for NOIR readers.
+                .addQueryParameter("translatedLanguage[]", "en")
+                .addQueryParameter("translatedLanguage[]", "id")
+                .addQueryParameter("order[chapter]", "desc")
+                .addQueryParameter("order[volume]", "desc")
+                .addQueryParameter("includes[]", "scanlation_group")
+            val json = get(builder.build().toString().substringAfter("https://api.mangadex.org"))
+            val data = json.optJSONArray("data") ?: break
+            if (data.length() == 0) break
+            for (i in 0 until data.length()) {
+                val item = data.optJSONObject(i) ?: continue
+                val a = item.optJSONObject("attributes") ?: JSONObject()
+                val number = a.optString("chapter", "?")
+                val title = a.optString("title")
+                result += Chapter(
+                    item.optString("id"),
+                    if (title.isBlank()) "Chapter $number" else "Chapter $number · $title",
+                    number,
+                    a.optString("translatedLanguage", "en")
+                )
+            }
+            offset += data.length()
+            if (data.length() < pageSize) break
         }
+        return result.distinctBy { it.id }
     }
 
     override suspend fun pages(chapter: Chapter): ChapterPages {
