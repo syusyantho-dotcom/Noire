@@ -1,4 +1,4 @@
-# NOIR 1.3.0 — Premium Android manga reader
+# NOIR 1.4.0 — Premium Android manga reader
 
 NOIR is an Android manga/manhwa reader built with Kotlin and Jetpack Compose. Its visual direction is AMOLED black, silver typography, restrained violet accents, cinematic artwork and spring-driven glass navigation.
 
@@ -50,4 +50,4 @@ The debug APK is generated at app/build/outputs/apk/debug/app-debug.apk. GitHub 
 
 ## Licensing
 
-The Kotatsu parser integration is licensed under GPL-3.0. NOIR 1.3.0 is distributed as a combined GPL-3.0 application. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for license text and attribution.
+The Kotatsu parser integration is licensed under GPL-3.0. NOIR 1.4.0 is distributed as a combined GPL-3.0 application. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for license text and attribution.
