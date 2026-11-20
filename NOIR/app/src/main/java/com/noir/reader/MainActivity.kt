@@ -921,16 +921,20 @@ private fun ReaderPageImage(
                 translationX = panX
                 translationY = panY
             }
-            .pointerInput(pageUrl) {
-                detectTransformGestures { _, pan, gestureZoom, _ ->
-                    val nextZoom = (zoom * gestureZoom).coerceIn(1f, 4f)
-                    zoom = nextZoom
-                    if (nextZoom <= 1.01f) {
-                        panX = 0f
-                        panY = 0f
-                    } else {
-                        panX += pan.x
-                        panY += pan.y
+            // Only intercept drag gestures while zoomed. At normal scale,
+            // vertical gestures must reach LazyColumn so the reader can scroll.
+            .pointerInput(pageUrl, zoom > 1.01f) {
+                if (zoom > 1.01f) {
+                    detectTransformGestures { _, pan, gestureZoom, _ ->
+                        val nextZoom = (zoom * gestureZoom).coerceIn(1f, 4f)
+                        zoom = nextZoom
+                        if (nextZoom <= 1.01f) {
+                            panX = 0f
+                            panY = 0f
+                        } else {
+                            panX += pan.x
+                            panY += pan.y
+                        }
                     }
                 }
             }
