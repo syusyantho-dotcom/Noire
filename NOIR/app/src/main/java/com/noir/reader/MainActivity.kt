@@ -159,7 +159,6 @@ private fun NoirApp() {
     var loading by remember { mutableStateOf(false) }
     var showIntro by remember { mutableStateOf(launchIntro) }
     var error by remember { mutableStateOf<String?>(null) }
-    val source = SourceRegistry.sources.first()
 
     LaunchedEffect(query, tab) {
         if (selected == null && selectedChapter == null && (tab == "Discover" || tab == "Home")) {
@@ -167,7 +166,17 @@ private fun NoirApp() {
             loading = true
             error = null
             try {
-                catalogue = if (query.isBlank()) source.popular() else source.search(query)
+                val combined = mutableListOf<Series>()
+                val failures = mutableListOf<String>()
+                for (provider in SourceRegistry.sources) {
+                    try {
+                        combined.addAll(if (query.isBlank()) provider.popular() else provider.search(query))
+                    } catch (providerError: Exception) {
+                        failures.add("${provider.name}: ${providerError.message ?: "unavailable"}")
+                    }
+                }
+                catalogue = combined.distinctBy { "${it.sourceId}:${it.id}" }
+                if (catalogue.isEmpty() && failures.isNotEmpty()) error = failures.first()
             } catch (e: Exception) {
                 error = e.message ?: "Could not load catalogue. Check your connection."
             } finally { loading = false }
@@ -690,7 +699,18 @@ private fun ReaderScreen(
 @Composable
 private fun SourcesScreen(onTab: (String) -> Unit) {
     val context = LocalContext.current
-    var pinned by remember { mutableStateOf(setOf("mangadex")) }
+    val sourcePrefs = remember { context.getSharedPreferences("noir_sources", Context.MODE_PRIVATE) }
+    var pinned by remember {
+        mutableStateOf(runCatching {
+            val stored = JSONArray(sourcePrefs.getString("pinned_sources", "[\\"mangadex\\"]"))
+            (0 until stored.length()).map { stored.optString(it) }.toSet()
+        }.getOrDefault(setOf("mangadex")))
+    }
+    LaunchedEffect(pinned) {
+        val stored = JSONArray()
+        pinned.forEach { stored.put(it) }
+        sourcePrefs.edit().putString("pinned_sources", stored.toString()).apply()
+    }
     var selectedFilter by remember { mutableStateOf("All") }
     var sourceQuery by remember { mutableStateOf("") }
     val entries = listOf(
@@ -841,7 +861,7 @@ private fun SourcesScreen(onTab: (String) -> Unit) {
                         }
                     }
                     Text(if (active) "CONNECTED" else "NOT INSTALLED", color = if (active) Color(0xFF9FC29A) else Muted, fontSize = 6.sp, letterSpacing = .6.sp)
-                    if (active || entry.first == "mangasee" || entry.first == "mangareader") {
+                    if (true) {
                         Text(
                             if (isPinned) "Unpin" else "Pin source",
                             color = Color(0xFFBCA9C9), fontSize = 7.sp,
