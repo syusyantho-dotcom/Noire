@@ -720,7 +720,16 @@ private fun CatalogueScreen(
 
 @Composable
 private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?, recentlyRead: List<Series>, saved: List<Series>, progressBySeries: Map<String, Float>, onOpen: (Series) -> Unit, onTab: (String) -> Unit) {
-    val featured = catalogue.firstOrNull()
+    val featuredStories = catalogue.take(5)
+    val heroPagerState = rememberPagerState(pageCount = { featuredStories.size.coerceAtLeast(1) })
+    LaunchedEffect(featuredStories.size) {
+        if (featuredStories.size > 1) {
+            while (true) {
+                delay(6500)
+                heroPagerState.animateScrollToPage((heroPagerState.currentPage + 1) % featuredStories.size)
+            }
+        }
+    }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -738,28 +747,90 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                 }
             }
             item {
-                Box(Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(27.dp)).background(Brush.linearGradient(listOf(Color(0xFF282333), Color(0xFF111014))))) {
-                    featured?.let { SeriesCover(it, Modifier.fillMaxSize()) }
-                    Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color(0xF5070709), Color(0xAA070709), Color(0x18070709)))))
-                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x22070709), Color(0x22070709), Color(0xF5070709)))))
-                    Column(Modifier.align(Alignment.TopStart).padding(19.dp)) {
-                        Row(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0x773A3347)).border(1.dp, Color(0x557F7397), RoundedCornerShape(30.dp)).padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(5.dp).clip(CircleShape).background(Color(0xFFD6C4F1)))
-                            Spacer(Modifier.width(7.dp))
-                            Text("NOIR / EDITOR'S PICK", color = Color(0xFFE5DDF0), fontSize = 8.sp, letterSpacing = 1.2.sp)
+                Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
+                    HorizontalPager(
+                        state = heroPagerState,
+                        modifier = Modifier.fillMaxWidth(),
+                        pageSpacing = 12.dp,
+                        contentPadding = PaddingValues(end = 22.dp)
+                    ) { page ->
+                        val story = featuredStories.getOrNull(page)
+                        Box(
+                            Modifier.fillMaxWidth().height(342.dp)
+                                .graphicsLayer {
+                                    val offset = (heroPagerState.currentPage - page) + heroPagerState.currentPageOffsetFraction
+                                    val distance = kotlin.math.abs(offset).coerceIn(0f, 1f)
+                                    alpha = 1f - distance * 0.18f
+                                    scaleX = 1f - distance * 0.035f
+                                    scaleY = 1f - distance * 0.035f
+                                }
+                                .clip(RoundedCornerShape(28.dp))
+                                .background(Brush.linearGradient(listOf(Color(0xFF30283B), Color(0xFF111014))))
+                                .clickable { story?.let(onOpen) }
+                        ) {
+                            story?.let { SeriesCover(it, Modifier.fillMaxSize()) }
+                            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color(0xF5070709), Color(0xA8070709), Color(0x12070709)))))
+                            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x12070709), Color(0x08070709), Color(0xF5070709)))))
+                            Column(Modifier.align(Alignment.TopStart).padding(18.dp)) {
+                                Row(
+                                    Modifier.clip(RoundedCornerShape(30.dp))
+                                        .background(Color(0x773A3347))
+                                        .border(1.dp, Color(0x557F7397), RoundedCornerShape(30.dp))
+                                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(Modifier.size(5.dp).clip(CircleShape).background(Color(0xFFD6C4F1)))
+                                    Spacer(Modifier.width(7.dp))
+                                    Text("NOIR / EDITOR'S PICK", color = Color(0xFFE5DDF0), fontSize = 8.sp, letterSpacing = 1.2.sp)
+                                }
+                            }
+                            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(20.dp)) {
+                                Text(
+                                    "FEATURED STORY  /  ${String.format("%02d", page + 1)}",
+                                    color = Color(0xFFD0C4E2), fontSize = 8.sp, letterSpacing = 2.sp
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    story?.title ?: "A universe beyond the page",
+                                    color = White, fontSize = 26.sp, lineHeight = 30.sp,
+                                    fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(Modifier.height(7.dp))
+                                Text(
+                                    story?.description?.takeIf { it.isNotBlank() }?.let {
+                                        if (it.length > 105) it.take(105).substringBeforeLast(" ") + "…" else it
+                                    } ?: "One story. A thousand places to disappear.",
+                                    color = Color(0xFFD0CDD4), fontSize = 10.sp, lineHeight = 15.sp,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(Modifier.height(15.dp))
+                                Row(
+                                    Modifier.clip(RoundedCornerShape(30.dp))
+                                        .background(Color(0xFFE9E4EF))
+                                        .clickable { story?.let(onOpen) }
+                                        .padding(horizontal = 15.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("ENTER THE STORY", color = Color(0xFF17131D), fontSize = 8.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(Modifier.width(8.dp))
+                                    Icon(Icons.Rounded.ArrowOutward, null, tint = Color(0xFF17131D), modifier = Modifier.size(13.dp))
+                                }
+                            }
                         }
                     }
-                    Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
-                        Text("01  —  FEATURED STORY", color = Color(0xFFD0C4E2), fontSize = 8.sp, letterSpacing = 2.sp)
-                        Spacer(Modifier.height(8.dp))
-                        Text(featured?.title ?: "A universe beyond the page", color = White, fontSize = 25.sp, lineHeight = 29.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(6.dp))
-                        Text("One story. A thousand places to disappear.", color = Color(0xFFD0CDD4), fontSize = 10.sp)
-                        Spacer(Modifier.height(15.dp))
-                        Row(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0xFFE9E4EF)).clickable { featured?.let(onOpen) }.padding(horizontal = 15.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("ENTER THE STORY", color = Color(0xFF17131D), fontSize = 8.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.width(8.dp))
-                            Icon(Icons.Rounded.ArrowOutward, null, tint = Color(0xFF17131D), modifier = Modifier.size(13.dp))
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        repeat(featuredStories.size.coerceAtLeast(1)) { index ->
+                            Box(
+                                Modifier.padding(horizontal = 3.dp)
+                                    .width(if (heroPagerState.currentPage == index) 19.dp else 5.dp)
+                                    .height(5.dp).animateContentSize(tween(260))
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (heroPagerState.currentPage == index) Color(0xFFD8C5F0) else Color(0xFF48434E))
+                            )
                         }
                     }
                 }
