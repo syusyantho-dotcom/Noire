@@ -1272,19 +1272,45 @@ private fun DetailScreen(
                         )
                         Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(series.sourceName.uppercase(), color = Silver, fontSize = 9.sp, letterSpacing = 1.5.sp)
+                            Box(
+                                Modifier.clip(RoundedCornerShape(30.dp))
+                                    .background(Color(0x88342B40))
+                                    .border(1.dp, Color(0x667E6B91), RoundedCornerShape(30.dp))
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(series.sourceName.uppercase(), color = Color(0xFFE0D4EE), fontSize = 8.sp, letterSpacing = 1.2.sp)
+                            }
                             Spacer(Modifier.width(9.dp))
-                            Box(Modifier.size(3.dp).clip(CircleShape).background(Muted))
-                            Spacer(Modifier.width(9.dp))
-                            Text(if (saved) "IN YOUR LIBRARY" else "NOT IN LIBRARY", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
+                            Text(if (saved) "SAVED TO LIBRARY" else "NOT IN LIBRARY", color = Color(0xFFCAC4D0), fontSize = 8.sp, letterSpacing = .8.sp)
+                        }
+                        if (chapters.isNotEmpty()) {
+                            Spacer(Modifier.height(16.dp))
+                            Row(
+                                Modifier.clip(RoundedCornerShape(13.dp))
+                                    .background(Color(0xCC17141C))
+                                    .border(1.dp, Color(0x557E6B91), RoundedCornerShape(13.dp))
+                                    .clickable { onChapter(chapters.first()) }
+                                    .padding(horizontal = 15.dp, vertical = 11.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Rounded.PlayArrow, null, tint = White, modifier = Modifier.size(17.dp))
+                                Spacer(Modifier.width(7.dp))
+                                Text("OPEN FIRST LISTED CHAPTER", color = White, fontSize = 8.sp, letterSpacing = 1.1.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.width(8.dp))
+                                Icon(Icons.Rounded.ArrowForward, null, tint = Color(0xFFD6C5F2), modifier = Modifier.size(13.dp))
+                            }
                         }
                     }
                 }
             }
 
             item {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 25.dp, vertical = 22.dp)) {
-                    Text("OVERVIEW", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 2.2.sp, fontWeight = FontWeight.Bold)
+                Column(Modifier.fillMaxWidth().padding(horizontal = 25.dp, vertical = 22.dp).animateContentSize()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("THE STORY", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 2.2.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.weight(1f))
+                        Text("SYNOPSIS", color = Color(0xFF625D69), fontSize = 8.sp, letterSpacing = 1.2.sp)
+                    }
                     Spacer(Modifier.height(10.dp))
                     Text(
                         synopsisText,
@@ -1311,16 +1337,14 @@ private fun DetailScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("CONTINUE THE STORY", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 2.sp)
+                        Text("YOUR NEXT PAGE", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 2.sp)
                         Spacer(Modifier.height(5.dp))
-                        Text("Chapters", color = White, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Chapter list", color = White, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    Text(
-                        if (chapters.isNotEmpty()) "${chapters.size} AVAILABLE" else series.sourceName.uppercase(),
-                        color = Muted,
-                        fontSize = 8.sp,
-                        letterSpacing = 1.2.sp
-                    )
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(chapters.size.toString().padStart(2, '0'), color = White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                        Text("AVAILABLE", color = Muted, fontSize = 7.sp, letterSpacing = 1.2.sp)
+                    }
                 }
             }
 
@@ -1336,12 +1360,21 @@ private fun DetailScreen(
             items(chapters, key = { it.id }) { chapter ->
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 5.dp)
-                        .clip(RoundedCornerShape(15.dp))
-                        .background(Color(0xFF17171A))
+                        .clip(RoundedCornerShape(17.dp))
+                        .background(Brush.linearGradient(listOf(Color(0xFF201D25), Color(0xFF141316))))
+                        .border(1.dp, Color(0xFF302B35), RoundedCornerShape(17.dp))
                         .clickable { onChapter(chapter) }
-                        .padding(horizontal = 17.dp, vertical = 17.dp),
+                        .padding(horizontal = 13.dp, vertical = 13.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Box(
+                        Modifier.size(39.dp).clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF30283A)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.MenuBook, null, tint = Color(0xFFD6C5F2), modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(chapter.name, color = White, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(5.dp))
