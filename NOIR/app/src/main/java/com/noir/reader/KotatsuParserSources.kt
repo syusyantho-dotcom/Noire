@@ -78,6 +78,12 @@ private class KotatsuMangaSource(
     override val category: String = parserSource.contentType.name.replace('_', ' ')
     override val isBroken: Boolean = parserSource.isBroken
 
+    override suspend fun iconUrl(): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            host.newParserInstance(parserSource).getFavicons().find(64)?.url
+        }.getOrNull()
+    }
+
     override suspend fun popular(page: Int): List<Series> = load(null, page)
 
     override suspend fun search(query: String, page: Int): List<Series> = load(query, page)
