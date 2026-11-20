@@ -554,7 +554,11 @@ private fun NoirApp() {
             when {
                 selectedChapter != null -> ReaderScreen(
                     selected, selectedChapter!!, chapters, pages, loading, error,
-                    readingProgress[selectedChapter!!.id] ?: 0,
+                    readingProgress[selectedChapter!!.id]
+                        ?: readingHistory["${selected!!.sourceId}:${selected!!.id}"]
+                            ?.takeIf { it.chapterId == selectedChapter!!.id }
+                            ?.let { (it.pageNumber - 1).coerceAtLeast(0) }
+                        ?: 0,
                     nextChapterReady = isNextChapterPreloaded,
                     readerMode = readerMode,
                     onModeChange = { mode -> readerMode = mode; prefs.edit().putString("reader_mode", mode).apply() },
