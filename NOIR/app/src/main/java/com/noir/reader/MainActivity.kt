@@ -698,7 +698,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
 private fun HomeSeriesShelf(
     title: String,
     eyebrow: String,
-    items: List<Series>,
+    seriesItems: List<Series>,
     actionLabel: String,
     onOpen: (Series) -> Unit
 ) {
@@ -708,7 +708,7 @@ private fun HomeSeriesShelf(
             Text(title, color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(end = 4.dp)) {
-            items(items, key = { "shelf-${it.sourceId}-${it.id}" }) { series ->
+            items(seriesItems, key = { "shelf-${it.sourceId}-${it.id}" }) { series ->
                 Column(
                     Modifier.width(116.dp).clip(RoundedCornerShape(17.dp))
                         .background(Color(0xFF141318)).clickable { onOpen(series) }
