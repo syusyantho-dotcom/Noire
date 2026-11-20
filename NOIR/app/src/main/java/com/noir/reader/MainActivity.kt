@@ -59,6 +59,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import coil.compose.AsyncImage
+import coil.imageLoader
+import coil.request.ImageRequest
 import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -201,6 +203,7 @@ private fun NoirApp() {
     var readerMode by remember { mutableStateOf(prefs.getString("reader_mode", "Vertical") ?: "Vertical") }
     var chapters by remember { mutableStateOf<List<Chapter>>(emptyList()) }
     var pages by remember { mutableStateOf<List<String>>(emptyList()) }
+    val preloadedChapterPages = remember { mutableStateMapOf<String, List<String>>() }
     var catalogue by remember { mutableStateOf<List<Series>>(emptyList()) }
     var cataloguePage by remember { mutableIntStateOf(0) }
     var hasMoreCatalogue by remember { mutableStateOf(false) }
@@ -420,12 +423,35 @@ private fun NoirApp() {
         error = null
         try {
             val currentSeries = selected
+            val chapterKey = currentSeries?.let { OfflineChapterStore.key(it, chapter) }
             val offlinePages = currentSeries?.let { OfflineChapterStore.localPages(context, it, chapter) }
-            pages = offlinePages ?: SourceRegistry.byId(currentSeries?.sourceId ?: "")?.pages(chapter)?.pages.orEmpty()
+            val preparedPages = chapterKey?.let { preloadedChapterPages.remove(it) }
+            pages = offlinePages ?: preparedPages ?: SourceRegistry.byId(currentSeries?.sourceId ?: "")?.pages(chapter)?.pages.orEmpty()
         }
         catch (e: Exception) { error = e.message ?: "Could not load chapter pages." }
         finally { loading = false }
     }
+    LaunchedEffect(selected?.id, selected?.sourceId, selectedChapter?.id, chapters) {
+        val item = selected ?: return@LaunchedEffect
+        val current = selectedChapter ?: return@LaunchedEffect
+        val currentIndex = chapters.indexOfFirst { it.id == current.id }
+        val next = chapters.getOrNull(currentIndex + 1) ?: return@LaunchedEffect
+        val key = OfflineChapterStore.key(item, next)
+        if (key in preloadedChapterPages) return@LaunchedEffect
+        if (OfflineChapterStore.localPages(context, item, next) != null) return@LaunchedEffect
+        val source = SourceRegistry.byId(item.sourceId) ?: return@LaunchedEffect
+        runCatching { source.pages(next).pages }
+            .getOrNull()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { preloadedChapterPages[key] = it }
+    }
+    val nextChapterForReader = selectedChapter?.let { current ->
+        val index = chapters.indexOfFirst { it.id == current.id }
+        chapters.getOrNull(index + 1)
+    }
+    val isNextChapterPreloaded = selected?.let { item ->
+        nextChapterForReader?.let { preloadedChapterPages.containsKey(OfflineChapterStore.key(item, it)) }
+    } ?: false
 
     MaterialTheme(colorScheme = darkColorScheme(background = Black, surface = Panel, primary = Silver, onBackground = White, onSurface = White)) {
         Surface(Modifier.fillMaxSize(), color = Black) {
@@ -440,6 +466,7 @@ private fun NoirApp() {
                 selectedChapter != null -> ReaderScreen(
                     selected, selectedChapter!!, chapters, pages, loading, error,
                     readingProgress[selectedChapter!!.id] ?: 0,
+                    nextChapterReady = isNextChapterPreloaded,
                     readerMode = readerMode,
                     onModeChange = { mode -> readerMode = mode; prefs.edit().putString("reader_mode", mode).apply() },
                     onProgress = { page -> readingProgress[selectedChapter!!.id] = page },
@@ -1155,7 +1182,7 @@ private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, cont
 @Composable
 private fun ReaderScreen(
     series: Series?, chapter: Chapter, chapterList: List<Chapter>, pages: List<String>, loading: Boolean, error: String?,
-    initialPage: Int, readerMode: String, onModeChange: (String) -> Unit,
+    initialPage: Int, nextChapterReady: Boolean, readerMode: String, onModeChange: (String) -> Unit,
     onProgress: (Int) -> Unit, onNextChapter: () -> Unit, onBack: () -> Unit
 ) {
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage.coerceAtLeast(0))
@@ -1167,6 +1194,8 @@ private fun ReaderScreen(
     var dimAmount by remember { mutableFloatStateOf(0f) }
     var fitToWidth by remember { mutableStateOf(true) }
     val readerScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val imageLoader = remember(context) { context.imageLoader }
     val isPaged = readerMode == "Horizontal" || readerMode == "Right to left"
 
     LaunchedEffect(pages.size, initialPage, readerMode) {
@@ -1182,6 +1211,20 @@ private fun ReaderScreen(
         }
     }
     val currentPage = if (isPaged) pagerState.currentPage else listState.firstVisibleItemIndex
+
+    // Keep nearby pages in Coil's cache so fast scrolling is less likely to show blanks.
+    LaunchedEffect(currentPage, pages, isPaged) {
+        if (pages.isNotEmpty()) {
+            val ahead = if (isPaged) 2 else 3
+            val indices = buildList {
+                for (index in (currentPage + 1)..minOf(pages.lastIndex, currentPage + ahead)) add(index)
+                if (currentPage > 0) add(currentPage - 1)
+            }.distinct()
+            indices.forEach { index ->
+                imageLoader.enqueue(ImageRequest.Builder(context).data(pages[index]).build())
+            }
+        }
+    }
 
     // In vertical/webtoon mode, advance only after the reader reaches the actual
     // bottom during a user-driven scroll. A per-chapter guard prevents duplicate loads.
@@ -1238,6 +1281,13 @@ private fun ReaderScreen(
                 }
             }
             if (dimAmount > 0f && pages.isNotEmpty()) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dimAmount)))
+            if (nextChapterReady && hasNextChapter) {
+                Box(Modifier.align(Alignment.TopCenter).padding(top = 12.dp).clip(RoundedCornerShape(30.dp))
+                    .background(Color(0xCC19171F)).border(1.dp, Color(0x557F788B), RoundedCornerShape(30.dp))
+                    .padding(horizontal = 12.dp, vertical = 7.dp)) {
+                    Text("NEXT CHAPTER READY", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.1.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
             if (pages.isNotEmpty()) {
                 Box(Modifier.align(Alignment.TopEnd).padding(12.dp).clip(RoundedCornerShape(30.dp))
                     .background(Color(0xB51A1920)).border(1.dp, Color(0x557F788B), RoundedCornerShape(30.dp))
