@@ -634,43 +634,168 @@ private fun ReaderScreen(series: Series?, chapter: Chapter, pages: List<String>,
 
 @Composable
 private fun SourcesScreen(onTab: (String) -> Unit) {
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 20.dp, top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { onTab("Profile") }) { Icon(Icons.Rounded.ArrowBack, null, tint = White) }
-            Column {
-                Text("NOIR / SOURCE MANAGER", color = Muted, fontSize = 9.sp, letterSpacing = 1.8.sp)
-                Text("Manage sources", color = White, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+    val context = LocalContext.current
+    var pinned by remember { mutableStateOf(setOf("mangadex")) }
+    var selectedFilter by remember { mutableStateOf("All") }
+    var sourceQuery by remember { mutableStateOf("") }
+    val entries = listOf(
+        Triple("mangadex", "MangaDex", "ACTIVE"),
+        Triple("mangasee", "MangaSee", "PLANNED"),
+        Triple("mangareader", "MangaReader", "PLANNED"),
+        Triple("mangakakalot", "MangaKakalot", "PLANNED"),
+        Triple("mangapark", "MangaPark", "PLANNED"),
+        Triple("webtoon", "WEBTOON", "PLANNED"),
+        Triple("asura", "Asura Scans", "PLANNED"),
+        Triple("reaperscans", "Reaper Scans", "PLANNED")
+    )
+    val filtered = entries.filter {
+        (it.second.contains(sourceQuery, ignoreCase = true)) &&
+        (selectedFilter == "All" || (selectedFilter == "Active" && it.third == "ACTIVE") ||
+            (selectedFilter == "Pinned" && pinned.contains(it.first)))
+    }
+    Column(Modifier.fillMaxSize().background(Black).statusBarsPadding()) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 12.dp, end = 20.dp, top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { onTab("Profile") }) {
+                Icon(Icons.Rounded.ArrowBack, null, tint = White)
             }
+            Column(Modifier.weight(1f)) {
+                Text("NOIR  /  DISCOVER", color = Muted, fontSize = 9.sp, letterSpacing = 2.sp)
+                Text("Source library", color = White, fontSize = 27.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Icon(Icons.Rounded.Tune, null, tint = Silver, modifier = Modifier.size(21.dp))
         }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp), contentPadding = PaddingValues(top = 12.dp, bottom = 20.dp)) {
-            item {
-                Text("YOUR CATALOGUES", color = Silver, fontSize = 9.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(12.dp))
-            }
-            items(SourceRegistry.sources, key = { it.id }) { source ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel).border(1.dp, Color(0xFF302C37), RoundedCornerShape(18.dp)).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(43.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF292432)), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Public, null, tint = Color(0xFFD6C9E7), modifier = Modifier.size(23.dp))
+        Column(Modifier.padding(horizontal = 20.dp)) {
+            Spacer(Modifier.height(14.dp))
+            Box(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
+                    .background(Brush.linearGradient(listOf(Color(0xFF30263B), Color(0xFF17151D), Color(0xFF101012))))
+                    .border(1.dp, Color(0xFF51445E), RoundedCornerShape(24.dp))
+                    .padding(19.dp)
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(38.dp).clip(RoundedCornerShape(13.dp)).background(Color(0xFF51405F)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.Explore, null, tint = Color(0xFFF0E7F7), modifier = Modifier.size(21.dp))
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text("YOUR MANGA NETWORK", color = Color(0xFFE2D6EA), fontSize = 9.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.weight(1f))
+                        Text("01 CONNECTED", color = Color(0xFFB9D3B1), fontSize = 8.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold)
                     }
-                    Column(Modifier.weight(1f).padding(start = 13.dp, end = 8.dp)) {
-                        Text(source.name, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.height(3.dp))
-                        Text(source.description, color = Muted, fontSize = 10.sp, lineHeight = 14.sp)
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text("ACTIVE", color = Color(0xFFC8D8C5), fontSize = 8.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold)
-                        Text("●", color = Color(0xFF9CB895), fontSize = 8.sp)
+                    Spacer(Modifier.height(17.dp))
+                    Text("Read beyond\nthe boundaries.", color = White, fontSize = 25.sp, lineHeight = 29.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(7.dp))
+                    Text("Discover community catalogues and bring your favourite manga into one reading experience.", color = Color(0xFFB7B0BE), fontSize = 11.sp, lineHeight = 17.sp)
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        Modifier.clip(RoundedCornerShape(12.dp)).background(Color(0xFFEEE7F2))
+                            .clickable { onTab("Discover") }.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Browse connected source", color = Color(0xFF17121C), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(7.dp))
+                        Icon(Icons.Rounded.ArrowForward, null, tint = Color(0xFF17121C), modifier = Modifier.size(14.dp))
                     }
                 }
-                Spacer(Modifier.height(11.dp))
             }
-            item {
-                Spacer(Modifier.height(10.dp))
-                Text("ABOUT SOURCES", color = Silver, fontSize = 9.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(9.dp))
-                Text("NOIR currently connects to the MangaDex catalogue. The source interface is designed to support additional providers, but installing third-party extensions is not available in this build.", color = Muted, fontSize = 11.sp, lineHeight = 18.sp)
-                Spacer(Modifier.height(13.dp))
-                Text("More source options can be added in a future update.", color = Color(0xFFC8BED8), fontSize = 10.sp)
+            Spacer(Modifier.height(20.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("COMMUNITY SOURCES", color = Silver, fontSize = 9.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Text("${entries.size} CATALOGUES", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
+            }
+            Spacer(Modifier.height(10.dp))
+            androidx.compose.material3.OutlinedTextField(
+                value = sourceQuery,
+                onValueChange = { sourceQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("Find a source…", color = Muted, fontSize = 12.sp) },
+                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = Muted) },
+                shape = RoundedCornerShape(15.dp),
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = White, unfocusedTextColor = White,
+                    focusedBorderColor = Color(0xFF786487), unfocusedBorderColor = Color(0xFF343039),
+                    cursorColor = White, focusedContainerColor = Panel, unfocusedContainerColor = Panel
+                )
+            )
+            Spacer(Modifier.height(11.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("All", "Active", "Pinned").forEach { filter ->
+                    val active = selectedFilter == filter
+                    Box(
+                        Modifier.clip(RoundedCornerShape(50)).background(if (active) Color(0xFFE8DDEC) else Panel)
+                            .clickable { selectedFilter = filter }
+                            .padding(horizontal = 15.dp, vertical = 8.dp)
+                    ) {
+                        Text(filter, color = if (active) Color(0xFF211927) else Silver, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+            Spacer(Modifier.height(13.dp))
+        }
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(4),
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(start = 15.dp, end = 15.dp, top = 2.dp, bottom = 18.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            verticalArrangement = Arrangement.spacedBy(13.dp)
+        ) {
+            items(filtered, key = { it.first }) { entry ->
+                val active = entry.third == "ACTIVE"
+                val isPinned = pinned.contains(entry.first)
+                Column(
+                    Modifier.clip(RoundedCornerShape(16.dp))
+                        .clickable(enabled = active) { onTab("Discover") }
+                        .padding(vertical = 5.dp, horizontal = 2.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        Modifier.size(66.dp).clip(RoundedCornerShape(19.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    if (active) listOf(Color(0xFF4A3A52), Color(0xFF211C27))
+                                    else listOf(Color(0xFF29272D), Color(0xFF171619))
+                                )
+                            )
+                            .border(1.dp, if (active) Color(0xFF8C769A) else Color(0xFF3C3740), RoundedCornerShape(19.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            entry.second.take(1).uppercase(),
+                            color = if (active) Color(0xFFF0E5F4) else Color(0xFF9A8F9F),
+                            fontSize = 29.sp, fontWeight = FontWeight.Light
+                        )
+                        if (active) {
+                            Box(Modifier.align(Alignment.BottomEnd).padding(5.dp).size(8.dp).clip(CircleShape).background(Color(0xFF9DC49A)))
+                        } else {
+                            Box(Modifier.align(Alignment.BottomEnd).padding(5.dp).clip(RoundedCornerShape(5.dp)).background(Color(0xFF37313D)).padding(horizontal = 4.dp, vertical = 2.dp)) {
+                                Text("SOON", color = Color(0xFFBDB0C5), fontSize = 5.sp, letterSpacing = .5.sp)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(7.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                        Text(entry.second, color = if (active) White else Silver, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (isPinned) {
+                            Spacer(Modifier.width(2.dp))
+                            Icon(Icons.Rounded.PushPin, null, tint = Color(0xFFC9B5D7), modifier = Modifier.size(9.dp))
+                        }
+                    }
+                    Text(if (active) "CONNECTED" else "NOT INSTALLED", color = if (active) Color(0xFF9FC29A) else Muted, fontSize = 6.sp, letterSpacing = .6.sp)
+                    if (active || entry.first == "mangasee" || entry.first == "mangareader") {
+                        Text(
+                            if (isPinned) "Unpin" else "Pin source",
+                            color = Color(0xFFBCA9C9), fontSize = 7.sp,
+                            modifier = Modifier.clickable {
+                                pinned = if (isPinned) pinned - entry.first else pinned + entry.first
+                            }.padding(top = 3.dp)
+                        )
+                    }
+                }
             }
         }
         BottomNav("Profile", onTab)
