@@ -7,6 +7,10 @@ on:
       - 'NOIR/**'
       - '.github/workflows/android.yml'
 
+concurrency:
+  group: noir-android-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
