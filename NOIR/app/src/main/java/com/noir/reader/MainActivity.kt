@@ -184,7 +184,7 @@ private fun NoirApp() {
     SideEffect { MatureContentAccess.enabled = matureContentEnabled }
     var showAbout by remember { mutableStateOf(false) }
     var showWhatsNew by remember { mutableStateOf(false) }
-    val whatsNewVersion = "1.4.1"
+    val whatsNewVersion = "1.5.0"
     val shouldShowWhatsNew = remember { prefs.getString("seen_whats_new", "") != whatsNewVersion }
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Series?>(null) }
@@ -671,7 +671,7 @@ private fun NoirApp() {
             if (showAbout) AlertDialog(
                 onDismissRequest = { showAbout = false },
                 title = { Text("About NOIR", color = White) },
-                text = { Text("NOIR 1.4.1 includes the Kotatsu community parser library under GPL-3.0. NO WARRANTY. You may copy and modify this app under that license. Full license and corresponding source: github.com/syusyantho-dotcom/Noire (NOIR/LICENSE and THIRD_PARTY_NOTICES.md).", color = Muted) },
+                text = { Text("NOIR 1.5.0 includes the Kotatsu community parser library under GPL-3.0. NO WARRANTY. You may copy and modify this app under that license. Full license and corresponding source: github.com/syusyantho-dotcom/Noire (NOIR/LICENSE and THIRD_PARTY_NOTICES.md).", color = Muted) },
                 confirmButton = { TextButton(onClick = { showAbout = false }) { Text("CLOSE", color = Silver) } },
                 containerColor = Panel
             )
@@ -1193,9 +1193,10 @@ private fun WhatsNewDialog(onDismiss: () -> Unit) {
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(15.dp)) {
-                WhatsNewItem("SMART READER", "Predictive chapter loading prepares the next chapter in the background, while nearby pages are warmed in the image cache.", "01")
-                WhatsNewItem("CONTINUE READING", "Your Library now remembers the exact chapter and page, with one-tap resume.", "02")
-                WhatsNewItem("YOUR PROGRESS, SAVED", "Reading history and page position stay on this device, ready when you return.", "03")
+                WhatsNewItem("CINEMA CHAPTER OPENING", "Every new chapter begins with an atmospheric full-screen title reveal, artwork backdrop, and a seamless transition into reading.", "01")
+                WhatsNewItem("SMART READER", "Predictive chapter loading prepares the next chapter in the background, while nearby pages are warmed in the image cache.", "02")
+                WhatsNewItem("CONTINUE READING", "Your Library now remembers the exact chapter and page, with one-tap resume.", "03")
+                WhatsNewItem("YOUR PROGRESS, SAVED", "Reading history and page position stay on this device, ready when you return.", "04")
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(Color(0xFF211D28)).padding(12.dp)) {
                     Text("Made for the moments when one more chapter turns into five.", color = Color(0xFFD2C4E2), fontSize = 10.sp, lineHeight = 15.sp)
                 }
