@@ -899,6 +899,7 @@ private fun ReaderScreen(
     var showSettings by remember { mutableStateOf(false) }
     var dimAmount by remember { mutableFloatStateOf(0f) }
     var fitToWidth by remember { mutableStateOf(true) }
+    val readerScope = rememberCoroutineScope()
 
     LaunchedEffect(pages.size, initialPage, readerMode) {
         if (pages.isNotEmpty()) {
@@ -998,14 +999,14 @@ private fun ReaderScreen(
                     Modifier.fillMaxWidth().background(Color(0xFF101013)).padding(horizontal = 14.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = { if (pagerState.currentPage > 0) androidx.compose.runtime.LaunchedEffect(Unit) { pagerState.animateScrollToPage(pagerState.currentPage - 1) } }, enabled = pagerState.currentPage > 0) {
+                    TextButton(onClick = { readerScope.launch { pagerState.animateScrollToPage((pagerState.currentPage - 1).coerceAtLeast(0)) } }, enabled = pagerState.currentPage > 0) {
                         Text("PREVIOUS", color = Silver, fontSize = 9.sp)
                     }
                     Spacer(Modifier.weight(1f))
                     Text("${currentPage + 1} / ${pages.size}", color = Muted, fontSize = 9.sp)
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { /* pager swipe remains the primary next-page gesture */ }, enabled = false) {
-                        Text("SWIPE →", color = Muted, fontSize = 9.sp)
+                    TextButton(onClick = { readerScope.launch { pagerState.animateScrollToPage((pagerState.currentPage + 1).coerceAtMost(pages.lastIndex)) } }, enabled = pagerState.currentPage < pages.lastIndex) {
+                        Text("NEXT", color = Silver, fontSize = 9.sp)
                     }
                 }
             }
