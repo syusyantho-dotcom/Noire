@@ -1188,7 +1188,7 @@ private fun ReaderScreen(
     LaunchedEffect(chapter.id, pages.size, isPaged, hasNextChapter) {
         if (!isPaged && pages.size > 1 && hasNextChapter) {
             var advanced = false
-            kotlinx.coroutines.flow.snapshotFlow {
+            snapshotFlow {
                 listState.isScrollInProgress && !listState.canScrollForward &&
                     listState.layoutInfo.totalItemsCount > 1
             }.collect { reachedEnd ->
