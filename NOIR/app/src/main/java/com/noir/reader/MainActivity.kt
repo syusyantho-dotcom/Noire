@@ -184,6 +184,19 @@ private fun NoirApp() {
         }
         prefs.edit().putString("recent_series", stored.toString()).apply()
     }
+    val libraryCategories = remember {
+        mutableStateMapOf<String, String>().apply {
+            runCatching {
+                val stored = JSONObject(prefs.getString("library_categories", "{}"))
+                stored.keys().forEach { key -> put(key, stored.optString(key, "Reading")) }
+            }
+        }
+    }
+    LaunchedEffect(libraryCategories.toMap()) {
+        val stored = JSONObject()
+        libraryCategories.forEach { (key, value) -> stored.put(key, value) }
+        prefs.edit().putString("library_categories", stored.toString()).apply()
+    }
     val bookmarkedChapterKeys = remember {
         mutableStateListOf<String>().apply {
             runCatching {
@@ -339,7 +352,14 @@ private fun NoirApp() {
                     onOpenSource = { selectedSource = it },
                     onTab = { tab = it }
                 )
-                tab == "Library" -> LibraryScreen(saved.toList(), recentlyRead.toList(), openSeries, { tab = it })
+                tab == "Library" -> LibraryScreen(
+                    saved.toList(), recentlyRead.toList(), libraryCategories.toMap(),
+                    onCategoryChange = { series, category ->
+                        val key = "${series.sourceId}:${series.id}"
+                        if (category == "Reading") libraryCategories.remove(key) else libraryCategories[key] = category
+                    },
+                    onOpen = openSeries, onTab = { tab = it }
+                )
                 tab == "Profile" -> ProfileScreen(introSound, launchIntro,
                     { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
                     { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
@@ -1252,17 +1272,48 @@ private fun SourceBrowseScreen(
 }
 
 @Composable
-private fun LibraryScreen(items: List<Series>, recent: List<Series>, onOpen: (Series) -> Unit, onTab: (String) -> Unit) {
+private fun LibraryScreen(
+    items: List<Series>,
+    recent: List<Series>,
+    categories: Map<String, String>,
+    onCategoryChange: (Series, String) -> Unit,
+    onOpen: (Series) -> Unit,
+    onTab: (String) -> Unit
+) {
+    val categoryOptions = listOf("All", "Reading", "Plan to read", "Completed", "On hold", "Dropped")
+    var selectedCategory by remember { mutableStateOf("All") }
+    val filtered = remember(items, categories, selectedCategory) {
+        if (selectedCategory == "All") items
+        else items.filter { (categories["${it.sourceId}:${it.id}"] ?: "Reading") == selectedCategory }
+    }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp)) {
             Spacer(Modifier.height(24.dp))
             Text("YOUR COLLECTION", color = Muted, fontSize = 9.sp, letterSpacing = 2.sp)
             Text("Library", color = White, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(5.dp))
-            Text("SAVED TITLES", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 1.5.sp)
-            Spacer(Modifier.height(18.dp))
+            Text("${items.size} SAVED TITLES", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 1.5.sp)
+            Spacer(Modifier.height(14.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(end = 8.dp)) {
+                items(categoryOptions) { category ->
+                    val count = when (category) {
+                        "All" -> items.size
+                        "Reading" -> items.count { (categories["${it.sourceId}:${it.id}"] ?: "Reading") == category }
+                        else -> items.count { categories["${it.sourceId}:${it.id}"] == category }
+                    }
+                    Box(
+                        Modifier.clip(RoundedCornerShape(24.dp))
+                            .background(if (selectedCategory == category) Color(0xFFE7DCEC) else Panel)
+                            .clickable { selectedCategory = category }
+                            .padding(horizontal = 13.dp, vertical = 9.dp)
+                    ) {
+                        Text("$category  $count", color = if (selectedCategory == category) Color(0xFF211B27) else Silver, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
-                if (recent.isNotEmpty()) {
+                if (selectedCategory == "All" && recent.isNotEmpty()) {
                     item { Text("PICK UP WHERE YOU LEFT OFF", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold) }
                     items(recent.take(8), key = { "recent-${it.sourceId}-${it.id}" }) { series ->
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF17151C)).clickable { onOpen(series) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1280,10 +1331,35 @@ private fun LibraryScreen(items: List<Series>, recent: List<Series>, onOpen: (Se
                     }
                     item { Spacer(Modifier.height(7.dp)); Text("SAVED COLLECTION", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold) }
                 }
-                if (items.isEmpty()) {
-                    item { EmptyState("Your library is waiting", "Save a series to keep it in your collection. Your recent titles will appear above.") }
+                if (filtered.isEmpty()) {
+                    item {
+                        EmptyState(
+                            if (items.isEmpty()) "Your library is waiting" else "Nothing in $selectedCategory",
+                            if (items.isEmpty()) "Save a series to keep it in your collection." else "Change a title's category or choose another filter."
+                        )
+                    }
                 } else {
-                    items(items, key = { "saved-${it.sourceId}-${it.id}" }) { SeriesRow(it) { onOpen(it) } }
+                    items(filtered, key = { "saved-${it.sourceId}-${it.id}" }) { series ->
+                        Column(Modifier.fillMaxWidth()) {
+                            SeriesRow(series) { onOpen(series) }
+                            var expanded by remember(series.id, series.sourceId) { mutableStateOf(false) }
+                            Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(categories["${series.sourceId}:${series.id}"] ?: "Reading", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = .8.sp)
+                                Spacer(Modifier.weight(1f))
+                                Box {
+                                    Text("MOVE TO  ▾", color = Muted, fontSize = 8.sp, modifier = Modifier.clickable { expanded = true }.padding(7.dp))
+                                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, containerColor = Panel) {
+                                        categoryOptions.filter { it != "All" }.forEach { category ->
+                                            DropdownMenuItem(
+                                                text = { Text(category, color = White) },
+                                                onClick = { onCategoryChange(series, category); expanded = false }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
