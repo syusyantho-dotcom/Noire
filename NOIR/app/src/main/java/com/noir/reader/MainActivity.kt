@@ -164,8 +164,8 @@ private fun NoirApp() {
                     },
                     onChapter = { selectedChapter = it }
                 )
-                tab == "Sources" -> SourcesScreen()
-                tab == "Library" -> LibraryScreen(saved.toList()) { selected = it }
+                tab == "Sources" -> SourcesScreen { tab = it }
+                tab == "Library" -> LibraryScreen(saved.toList(), { selected = it }, { tab = it })
                 tab == "Profile" -> ProfileScreen(introSound, launchIntro,
                     { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
                     { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
@@ -240,68 +240,95 @@ private fun CatalogueScreen(
 
 @Composable
 private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?, onOpen: (Series) -> Unit, onTab: (String) -> Unit) {
+    val featured = catalogue.firstOrNull()
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(19.dp)
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(25.dp)
         ) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("NOIR  /  YOUR READING ROOM", color = Muted, fontSize = 9.sp, letterSpacing = 2.1.sp)
-                        Text("Good stories.\nNo distractions.", color = White, fontSize = 31.sp, lineHeight = 35.sp, fontWeight = FontWeight.SemiBold)
+                        Text("THE ART OF GETTING LOST", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 2.4.sp)
+                        Spacer(Modifier.height(7.dp))
+                        Text("Your next\nworld awaits.", color = White, fontSize = 34.sp, lineHeight = 37.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    NoirLogoMark(43.dp)
+                    NoirLogoMark(48.dp)
                 }
             }
             item {
-                Box(Modifier.fillMaxWidth().height(222.dp).clip(RoundedCornerShape(25.dp)).background(Color(0xFF17141F))) {
-                    catalogue.firstOrNull()?.coverUrl?.let { url ->
-                        AsyncImage(model = url, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                    }
-                    Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color(0xF5070709), Color(0x99070709), Color(0x22070709)))))
-                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC070709)))))
-                    Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
-                        Text("THE NOIR SELECTION", color = Color(0xFFD0C7E2), fontSize = 9.sp, letterSpacing = 2.sp)
-                        Spacer(Modifier.height(8.dp))
-                        Text(catalogue.firstOrNull()?.title ?: "A universe of stories", color = White, fontSize = 23.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(5.dp))
-                        Text("Discover something worth staying up for", color = Color(0xFFD0CDD4), fontSize = 10.sp)
-                        Spacer(Modifier.height(11.dp))
-                        Row(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0x553F394B)).border(1.dp, Color(0x66D6CDE5), RoundedCornerShape(30.dp)).clickable { catalogue.firstOrNull()?.let(onOpen) }.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("EXPLORE FEATURE", color = White, fontSize = 8.sp, letterSpacing = 1.4.sp)
+                Box(Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(27.dp)).background(Brush.linearGradient(listOf(Color(0xFF282333), Color(0xFF111014))))) {
+                    featured?.coverUrl?.let { url -> AsyncImage(model = url, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                    Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color(0xF5070709), Color(0xAA070709), Color(0x18070709)))))
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x22070709), Color(0x22070709), Color(0xF5070709)))))
+                    Column(Modifier.align(Alignment.TopStart).padding(19.dp)) {
+                        Row(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0x773A3347)).border(1.dp, Color(0x557F7397), RoundedCornerShape(30.dp)).padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(5.dp).clip(CircleShape).background(Color(0xFFD6C4F1)))
                             Spacer(Modifier.width(7.dp))
-                            Icon(Icons.Rounded.ArrowForward, null, tint = White, modifier = Modifier.size(13.dp))
+                            Text("NOIR / EDITOR'S PICK", color = Color(0xFFE5DDF0), fontSize = 8.sp, letterSpacing = 1.2.sp)
+                        }
+                    }
+                    Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
+                        Text("01  —  FEATURED STORY", color = Color(0xFFD0C4E2), fontSize = 8.sp, letterSpacing = 2.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(featured?.title ?: "A universe beyond the page", color = White, fontSize = 25.sp, lineHeight = 29.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(6.dp))
+                        Text("One story. A thousand places to disappear.", color = Color(0xFFD0CDD4), fontSize = 10.sp)
+                        Spacer(Modifier.height(15.dp))
+                        Row(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0xFFE9E4EF)).clickable { featured?.let(onOpen) }.padding(horizontal = 15.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("ENTER THE STORY", color = Color(0xFF17131D), fontSize = 8.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.Rounded.ArrowOutward, null, tint = Color(0xFF17131D), modifier = Modifier.size(13.dp))
                         }
                     }
                 }
             }
             item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {
-                        Text("Popular right now", color = White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Stories selected from the catalogue", color = Muted, fontSize = 10.sp)
+                        Text("THE CURRENT", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 2.2.sp)
+                        Spacer(Modifier.height(5.dp))
+                        Text("Stories in motion", color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    Text("VIEW ALL  →", color = Color(0xFFC9BEDC), fontSize = 8.sp, letterSpacing = 1.2.sp, modifier = Modifier.clickable { onTab("Discover") }.padding(8.dp))
+                    Text("ALL TITLES  ↗", color = Silver, fontSize = 8.sp, letterSpacing = 1.2.sp, modifier = Modifier.clickable { onTab("Discover") }.padding(bottom = 3.dp))
                 }
             }
             when {
-                loading && catalogue.isEmpty() -> item { LoadingState("Curating your home…") }
+                loading && catalogue.isEmpty() -> item { LoadingState("Preparing your reading room…") }
                 error != null && catalogue.isEmpty() -> item { ErrorState(error) }
-                catalogue.isEmpty() -> item { EmptyState("Nothing to show yet", "Check your connection and try Discover.") }
-                else -> items(catalogue.take(10), key = { it.id }) { series -> HomeFeatureRow(series) { onOpen(series) } }
-            }
-            item {
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Brush.linearGradient(listOf(Color(0xFF211D2B), Color(0xFF111014)))).clickable { onTab("Discover") }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("YOUR NEXT READ IS OUT THERE", color = Color(0xFFCFC5E0), fontSize = 8.sp, letterSpacing = 1.5.sp)
-                        Spacer(Modifier.height(5.dp))
-                        Text("Explore the full catalogue", color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                catalogue.isEmpty() -> item { EmptyState("The shelves are quiet", "Open Discover to explore the catalogue.") }
+                else -> item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(end = 4.dp)) {
+                        items(catalogue.take(12), key = { it.id }) { series ->
+                            Column(Modifier.width(132.dp).clickable { onOpen(series) }) {
+                                Box(Modifier.fillMaxWidth().height(178.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF201D26))) {
+                                    Cover(series.coverUrl, Modifier.fillMaxSize())
+                                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x44000000), Color(0xAA000000)))))
+                                    Text(series.sourceName.uppercase(), color = Color(0xFFE4DDEC), fontSize = 7.sp, letterSpacing = 1.sp, modifier = Modifier.align(Alignment.BottomStart).padding(10.dp))
+                                }
+                                Spacer(Modifier.height(9.dp))
+                                Text(series.title, color = White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, lineHeight = 14.sp, overflow = TextOverflow.Ellipsis)
+                                Spacer(Modifier.height(3.dp))
+                                Text("DISCOVER MORE", color = Muted, fontSize = 7.sp, letterSpacing = 1.sp)
+                            }
+                        }
                     }
-                    Icon(Icons.Rounded.ArrowForward, null, tint = Silver)
                 }
             }
+            item {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Brush.linearGradient(listOf(Color(0xFF262131), Color(0xFF111014)))).border(1.dp, Color(0xFF393342), RoundedCornerShape(22.dp)).clickable { onTab("Discover") }.padding(19.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("BEYOND THE LAST PAGE", color = Color(0xFFD0C4E2), fontSize = 8.sp, letterSpacing = 1.8.sp)
+                        Spacer(Modifier.height(6.dp))
+                        Text("Find your next obsession.", color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(4.dp))
+                        Text("Explore the NOIR catalogue", color = Muted, fontSize = 10.sp)
+                    }
+                    Icon(Icons.Rounded.ArrowForward, null, tint = Silver, modifier = Modifier.size(20.dp))
+                }
+            }
+            item { Text("NOIR  •  MANGA  •  MANHWA  •  MORE", color = Color(0xFF625D69), fontSize = 8.sp, letterSpacing = 2.sp, modifier = Modifier.fillMaxWidth().padding(top = 1.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
         }
         BottomNav("Home", onTab)
     }
@@ -483,37 +510,71 @@ private fun ReaderScreen(series: Series?, chapter: Chapter, pages: List<String>,
 }
 
 @Composable
-private fun SourcesScreen() {
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(22.dp)) {
-        Text("NOIR / SOURCES", color = Muted, fontSize = 10.sp, letterSpacing = 2.sp)
-        Text("Catalogues", color = White, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(20.dp))
-        SourceRegistry.sources.forEach { source ->
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(Panel).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Public, null, tint = Silver, modifier = Modifier.size(34.dp))
-                Column(Modifier.weight(1f).padding(start = 13.dp)) {
-                    Text(source.name, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Text(source.description, color = Muted, fontSize = 10.sp)
-                }
-                Text("ACTIVE", color = Color(0xFFBFC9BD), fontSize = 8.sp, letterSpacing = 1.sp)
+private fun SourcesScreen(onTab: (String) -> Unit) {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 20.dp, top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { onTab("Profile") }) { Icon(Icons.Rounded.ArrowBack, null, tint = White) }
+            Column {
+                Text("NOIR / SOURCE MANAGER", color = Muted, fontSize = 9.sp, letterSpacing = 1.8.sp)
+                Text("Manage sources", color = White, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             }
-            Spacer(Modifier.height(10.dp))
         }
-        Spacer(Modifier.height(12.dp))
-        Text("The source engine is modular: each catalogue is an independent provider, and the reader uses the same chapter and page interface for every provider.", color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
-        Spacer(Modifier.height(12.dp))
-        Text("This build requests safe-rated catalogue entries only.", color = Silver, fontSize = 10.sp)
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp), contentPadding = PaddingValues(top = 12.dp, bottom = 20.dp)) {
+            item {
+                Text("YOUR CATALOGUES", color = Silver, fontSize = 9.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(12.dp))
+            }
+            items(SourceRegistry.sources, key = { it.id }) { source ->
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel).border(1.dp, Color(0xFF302C37), RoundedCornerShape(18.dp)).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(43.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF292432)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Public, null, tint = Color(0xFFD6C9E7), modifier = Modifier.size(23.dp))
+                    }
+                    Column(Modifier.weight(1f).padding(start = 13.dp, end = 8.dp)) {
+                        Text(source.name, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(3.dp))
+                        Text(source.description, color = Muted, fontSize = 10.sp, lineHeight = 14.sp)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("ACTIVE", color = Color(0xFFC8D8C5), fontSize = 8.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold)
+                        Text("●", color = Color(0xFF9CB895), fontSize = 8.sp)
+                    }
+                }
+                Spacer(Modifier.height(11.dp))
+            }
+            item {
+                Spacer(Modifier.height(10.dp))
+                Text("ABOUT SOURCES", color = Silver, fontSize = 9.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(9.dp))
+                Text("NOIR currently connects to the MangaDex catalogue. The source interface is designed to support additional providers, but installing third-party extensions is not available in this build.", color = Muted, fontSize = 11.sp, lineHeight = 18.sp)
+                Spacer(Modifier.height(13.dp))
+                Text("More source options can be added in a future update.", color = Color(0xFFC8BED8), fontSize = 10.sp)
+            }
+        }
+        BottomNav("Profile", onTab)
     }
 }
 
 @Composable
-private fun LibraryScreen(items: List<Series>, onOpen: (Series) -> Unit) {
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(20.dp)) {
-        Text("YOUR COLLECTION", color = Muted, fontSize = 10.sp, letterSpacing = 2.sp)
-        Text("Library", color = White, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(16.dp))
-        if (items.isEmpty()) EmptyState("Your library is empty", "Open a series and tap the bookmark to save it.")
-        else LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) { items(items, key = { it.id }) { SeriesRow(it) { onOpen(it) } } }
+private fun LibraryScreen(items: List<Series>, onOpen: (Series) -> Unit, onTab: (String) -> Unit) {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp)) {
+            Spacer(Modifier.height(24.dp))
+            Text("YOUR COLLECTION", color = Muted, fontSize = 9.sp, letterSpacing = 2.sp)
+            Text("Library", color = White, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(5.dp))
+            Text("SAVED TITLES", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 1.5.sp)
+            Spacer(Modifier.height(18.dp))
+            if (items.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    EmptyState("Your library is waiting", "Open a series and tap the bookmark to keep it here.")
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
+                    items(items, key = { it.id }) { SeriesRow(it) { onOpen(it) } }
+                }
+            }
+        }
+        BottomNav("Library", onTab)
     }
 }
 
