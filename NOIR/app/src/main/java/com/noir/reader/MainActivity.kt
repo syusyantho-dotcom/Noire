@@ -104,6 +104,7 @@ private fun NoirApp() {
     var showAbout by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Series?>(null) }
+    var selectedSource by remember { mutableStateOf<MangaSource?>(null) }
     var selectedChapter by remember { mutableStateOf<Chapter?>(null) }
     var chapters by remember { mutableStateOf<List<Chapter>>(emptyList()) }
     var pages by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -282,6 +283,16 @@ private fun NoirApp() {
                     readingProgress[selectedChapter!!.id] ?: 0,
                     onProgress = { page -> readingProgress[selectedChapter!!.id] = page },
                     onBack = { selectedChapter = null })
+                selectedSource != null -> SourceBrowseScreen(
+                    source = selectedSource!!,
+                    enabled = selectedSource!!.id in activeSourceIds,
+                    onToggleEnabled = {
+                        val id = selectedSource!!.id
+                        if (id in enabledSourceIds) enabledSourceIds.remove(id) else enabledSourceIds.add(id)
+                    },
+                    onBack = { selectedSource = null },
+                    onOpen = openSeries
+                )
                 selected != null -> DetailScreen(
                     selected!!, chapters, saved.any { it.id == selected!!.id && it.sourceId == selected!!.sourceId }, loading, error,
                     onBack = { selected = null },
@@ -297,6 +308,7 @@ private fun NoirApp() {
                         if (sourceId in enabledSourceIds) enabledSourceIds.remove(sourceId)
                         else enabledSourceIds.add(sourceId)
                     },
+                    onOpenSource = { selectedSource = it },
                     onTab = { tab = it }
                 )
                 tab == "Library" -> LibraryScreen(saved.toList(), recentlyRead.toList(), openSeries, { tab = it })
@@ -799,6 +811,7 @@ private fun ReaderScreen(
 private fun SourcesScreen(
     enabledSourceIds: Set<String>,
     onToggleEnabled: (String) -> Unit,
+    onOpenSource: (MangaSource) -> Unit,
     onTab: (String) -> Unit
 ) {
     val context = LocalContext.current
@@ -940,7 +953,7 @@ private fun SourcesScreen(
                 val isPinned = entry.id in pinned
                 Column(
                     Modifier.clip(RoundedCornerShape(16.dp))
-                        .clickable(enabled = !entry.isBroken) { onToggleEnabled(entry.id) }
+                        .clickable(enabled = !entry.isBroken) { onOpenSource(entry) }
                         .padding(vertical = 5.dp, horizontal = 2.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -994,6 +1007,14 @@ private fun SourcesScreen(
                         color = Muted, fontSize = 5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                     Text(
+                        if (active) "Disable" else "Enable source",
+                        color = if (active) Color(0xFFB9D3B1) else Color(0xFFE3D9EA),
+                        fontSize = 7.sp,
+                        modifier = Modifier.clickable(enabled = !entry.isBroken) {
+                            onToggleEnabled(entry.id)
+                        }.padding(top = 3.dp)
+                    )
+                    Text(
                         if (isPinned) "Unpin" else "Pin source",
                         color = Color(0xFFBCA9C9), fontSize = 7.sp,
                         modifier = Modifier.clickable {
@@ -1004,6 +1025,128 @@ private fun SourcesScreen(
             }
         }
         BottomNav("Profile", onTab)
+    }
+}
+
+@Composable
+private fun SourceBrowseScreen(
+    source: MangaSource,
+    enabled: Boolean,
+    onToggleEnabled: () -> Unit,
+    onBack: () -> Unit,
+    onOpen: (Series) -> Unit
+) {
+    var query by remember(source.id) { mutableStateOf("") }
+    var catalogue by remember(source.id) { mutableStateOf<List<Series>>(emptyList()) }
+    var loading by remember(source.id) { mutableStateOf(false) }
+    var error by remember(source.id) { mutableStateOf<String?>(null) }
+    var page by remember(source.id) { mutableIntStateOf(0) }
+    var hasMore by remember(source.id) { mutableStateOf(false) }
+    var loadingMore by remember(source.id) { mutableStateOf(false) }
+
+    LaunchedEffect(source.id, query) {
+        delay(if (query.isBlank()) 80 else 400)
+        loading = true
+        error = null
+        page = 0
+        catalogue = emptyList()
+        try {
+            val result = if (query.isBlank()) source.popular(0) else source.search(query, 0)
+            catalogue = result.distinctBy { it.id }
+            hasMore = result.isNotEmpty()
+            if (result.isEmpty()) error = "This source returned no titles. Try again later."
+        } catch (e: Exception) {
+            error = e.message ?: "Could not load this source."
+        } finally {
+            loading = false
+        }
+    }
+
+    Column(Modifier.fillMaxSize().background(Black).statusBarsPadding()) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 8.dp, end = 18.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Rounded.ArrowBack, null, tint = White)
+            }
+            Column(Modifier.weight(1f)) {
+                Text("NOIR  /  SOURCES", color = Muted, fontSize = 9.sp, letterSpacing = 2.sp)
+                Text(source.name, color = White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Box(
+                Modifier.clip(RoundedCornerShape(30.dp))
+                    .background(if (enabled) Color(0xFF263128) else Color(0xFF2B2431))
+                    .clickable(onClick = onToggleEnabled)
+                    .padding(horizontal = 12.dp, vertical = 9.dp)
+            ) {
+                Text(if (enabled) "ENABLED" else "ENABLE", color = if (enabled) Color(0xFFB9D3B1) else Color(0xFFE7D9EE), fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = .8.sp)
+            }
+        }
+        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
+            Text(source.description, color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+            Spacer(Modifier.height(7.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(source.category.uppercase(), color = Color(0xFFD4C4DE), fontSize = 8.sp, letterSpacing = 1.sp)
+                Spacer(Modifier.width(10.dp))
+                Text(source.language.uppercase(), color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
+            }
+            Spacer(Modifier.height(14.dp))
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("Search in ${source.name}…", color = Muted, fontSize = 12.sp) },
+                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = Silver) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) IconButton(onClick = { query = "" }) {
+                        Icon(Icons.Rounded.Close, null, tint = Muted)
+                    }
+                },
+                shape = RoundedCornerShape(15.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = White, unfocusedTextColor = White,
+                    focusedBorderColor = Color(0xFF786487), unfocusedBorderColor = Color(0xFF343039),
+                    cursorColor = White, focusedContainerColor = Panel, unfocusedContainerColor = Panel
+                )
+            )
+            Spacer(Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (query.isBlank()) "LATEST CATALOGUE" else "SEARCH RESULTS", color = White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
+                Spacer(Modifier.weight(1f))
+                Text("${catalogue.size} TITLES", color = Muted, fontSize = 8.sp, letterSpacing = .8.sp)
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+        when {
+            loading && catalogue.isEmpty() -> LoadingState("Loading ${source.name}…")
+            error != null && catalogue.isEmpty() -> ErrorState(error!!)
+            catalogue.isEmpty() -> EmptyState("No titles found", "This source may be temporarily unavailable.")
+            else -> LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(17.dp),
+                horizontalArrangement = Arrangement.spacedBy(13.dp),
+                contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 24.dp)
+            ) {
+                items(catalogue, key = { "${source.id}-${it.id}" }) { item ->
+                    CoverTile(item) { onOpen(item) }
+                }
+            }
+        }
+        if (hasMore || loadingMore) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.Center) {
+                Text(
+                    if (loadingMore) "LOADING MORE…" else "LOAD MORE TITLES  ↓",
+                    color = Color(0xFFE3D9EA), fontSize = 9.sp, letterSpacing = 1.2.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0xFF211D28))
+                        .clickable(enabled = !loadingMore) {
+                            loadingMore = true
+                        }.padding(horizontal = 20.dp, vertical = 12.dp)
+                )
+            }
+        }
     }
 }
 
