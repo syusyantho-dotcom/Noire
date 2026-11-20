@@ -184,7 +184,7 @@ private class NoirParserContext(context: Context) : MangaLoaderContext() {
     override val parsers: ParsersBundle
         get() = ParsersBundleImpl
 
-    override fun getConfig(source: ParserMangaSource): MangaSourceConfig = DefaultParserConfig
+    override fun getConfig(source: org.koitharu.kotatsu.parsers.model.MangaSource): MangaSourceConfig = DefaultParserConfig
 
     override fun getDefaultUserAgent(): String =
         "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
