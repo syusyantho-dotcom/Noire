@@ -25,6 +25,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -106,6 +108,7 @@ private fun NoirApp() {
     var selected by remember { mutableStateOf<Series?>(null) }
     var selectedSource by remember { mutableStateOf<MangaSource?>(null) }
     var selectedChapter by remember { mutableStateOf<Chapter?>(null) }
+    var readerMode by remember { mutableStateOf(prefs.getString("reader_mode", "Vertical") ?: "Vertical") }
     var chapters by remember { mutableStateOf<List<Chapter>>(emptyList()) }
     var pages by remember { mutableStateOf<List<String>>(emptyList()) }
     var catalogue by remember { mutableStateOf<List<Series>>(emptyList()) }
@@ -279,10 +282,14 @@ private fun NoirApp() {
         Surface(Modifier.fillMaxSize(), color = Black) {
           Box(Modifier.fillMaxSize()) {
             when {
-                selectedChapter != null -> ReaderScreen(selected, selectedChapter!!, pages, loading, error,
+                selectedChapter != null -> ReaderScreen(
+                    selected, selectedChapter!!, pages, loading, error,
                     readingProgress[selectedChapter!!.id] ?: 0,
+                    readerMode = readerMode,
+                    onModeChange = { mode -> readerMode = mode; prefs.edit().putString("reader_mode", mode).apply() },
                     onProgress = { page -> readingProgress[selectedChapter!!.id] = page },
-                    onBack = { selectedChapter = null })
+                    onBack = { selectedChapter = null }
+                )
                 selectedSource != null -> SourceBrowseScreen(
                     source = selectedSource!!,
                     enabled = selectedSource!!.id in activeSourceIds,
@@ -778,15 +785,29 @@ private fun DetailScreen(
 @Composable
 private fun ReaderScreen(
     series: Series?, chapter: Chapter, pages: List<String>, loading: Boolean, error: String?,
-    initialPage: Int, onProgress: (Int) -> Unit, onBack: () -> Unit
+    initialPage: Int, readerMode: String, onModeChange: (String) -> Unit,
+    onProgress: (Int) -> Unit, onBack: () -> Unit
 ) {
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage)
-    LaunchedEffect(pages.size, initialPage) {
-        if (pages.isNotEmpty()) listState.scrollToItem(initialPage.coerceIn(0, pages.lastIndex))
+    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
+        initialPage = initialPage.coerceAtLeast(0),
+        pageCount = { pages.size }
+    )
+    var showModeMenu by remember { mutableStateOf(false) }
+    LaunchedEffect(pages.size, initialPage, readerMode) {
+        if (pages.isNotEmpty()) {
+            val target = initialPage.coerceIn(0, pages.lastIndex)
+            if (readerMode == "Horizontal" || readerMode == "Right to left") pagerState.scrollToPage(target)
+            else listState.scrollToItem(target)
+        }
     }
-    LaunchedEffect(listState.firstVisibleItemIndex, pages.size) {
-        if (pages.isNotEmpty()) onProgress(listState.firstVisibleItemIndex)
+    LaunchedEffect(readerMode, listState.firstVisibleItemIndex, pagerState.currentPage, pages.size) {
+        if (pages.isNotEmpty()) {
+            val current = if (readerMode == "Horizontal" || readerMode == "Right to left") pagerState.currentPage else listState.firstVisibleItemIndex
+            onProgress(current.coerceIn(0, pages.lastIndex))
+        }
     }
+    val currentPage = if (readerMode == "Horizontal" || readerMode == "Right to left") pagerState.currentPage else listState.firstVisibleItemIndex
     Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().background(Black).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Rounded.Close, null, tint = White) }
@@ -794,14 +815,47 @@ private fun ReaderScreen(
                 Text(series?.title ?: "NOIR READER", color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 Text(chapter.name, color = Muted, fontSize = 9.sp)
             }
-            Text(if (pages.isEmpty()) "VERTICAL" else "${(listState.firstVisibleItemIndex + 1).coerceAtMost(pages.size)} / ${pages.size}", color = Silver, fontSize = 8.sp, letterSpacing = 1.sp)
+            Box {
+                Text(
+                    if (pages.isEmpty()) readerMode.uppercase() else "${(currentPage + 1).coerceAtMost(pages.size)} / ${pages.size}",
+                    color = Silver, fontSize = 8.sp, letterSpacing = 1.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable { showModeMenu = true }.padding(9.dp)
+                )
+                DropdownMenu(expanded = showModeMenu, onDismissRequest = { showModeMenu = false }, containerColor = Panel) {
+                    listOf("Vertical", "Horizontal", "Right to left", "Webtoon").forEach { mode ->
+                        DropdownMenuItem(
+                            text = { Text(mode, color = if (readerMode == mode) Color(0xFFD6C5F2) else White) },
+                            onClick = { onModeChange(mode); showModeMenu = false }
+                        )
+                    }
+                }
+            }
         }
         when {
             loading && pages.isEmpty() -> LoadingState("Loading chapter pages…")
             error != null -> ErrorState(error)
             pages.isEmpty() -> EmptyState("No pages available", "This chapter may not have readable pages.")
-            else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                items(pages) { page -> AsyncImage(model = page, contentDescription = "Comic page", modifier = Modifier.fillMaxWidth()) }
+            readerMode == "Horizontal" || readerMode == "Right to left" ->
+                androidx.compose.foundation.pager.HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    reverseLayout = readerMode == "Right to left"
+                ) { index ->
+                    AsyncImage(
+                        model = pages[index], contentDescription = "Comic page",
+                        contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()
+                    )
+                }
+            else -> LazyColumn(
+                state = listState, modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(if (readerMode == "Webtoon") 0.dp else 2.dp)
+            ) {
+                items(pages) { page ->
+                    AsyncImage(
+                        model = page, contentDescription = "Comic page",
+                        contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
     }
