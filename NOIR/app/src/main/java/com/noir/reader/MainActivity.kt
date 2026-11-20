@@ -291,7 +291,7 @@ private fun NoirApp() {
                         if (id in enabledSourceIds) enabledSourceIds.remove(id) else enabledSourceIds.add(id)
                     },
                     onBack = { selectedSource = null },
-                    onOpen = openSeries
+                    onOpen = { item -> selectedSource = null; openSeries(item) }
                 )
                 selected != null -> DetailScreen(
                     selected!!, chapters, saved.any { it.id == selected!!.id && it.sourceId == selected!!.sourceId }, loading, error,
@@ -1043,6 +1043,7 @@ private fun SourceBrowseScreen(
     var page by remember(source.id) { mutableIntStateOf(0) }
     var hasMore by remember(source.id) { mutableStateOf(false) }
     var loadingMore by remember(source.id) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(source.id, query) {
         delay(if (query.isBlank()) 80 else 400)
@@ -1142,7 +1143,21 @@ private fun SourceBrowseScreen(
                     color = Color(0xFFE3D9EA), fontSize = 9.sp, letterSpacing = 1.2.sp,
                     modifier = Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0xFF211D28))
                         .clickable(enabled = !loadingMore) {
-                            loadingMore = true
+                            scope.launch {
+                                loadingMore = true
+                                try {
+                                    val nextPage = page + 1
+                                    val next = if (query.isBlank()) source.popular(nextPage) else source.search(query, nextPage)
+                                    catalogue = (catalogue + next).distinctBy { it.id }
+                                    page = nextPage
+                                    hasMore = next.isNotEmpty()
+                                } catch (e: Exception) {
+                                    error = e.message ?: "Could not load more titles."
+                                    hasMore = false
+                                } finally {
+                                    loadingMore = false
+                                }
+                            }
                         }.padding(horizontal = 20.dp, vertical = 12.dp)
                 )
             }
