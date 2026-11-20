@@ -236,6 +236,11 @@ private fun NoirApp() {
     var loading by remember { mutableStateOf(false) }
     var showIntro by remember { mutableStateOf(launchIntro) }
     var error by remember { mutableStateOf<String?>(null) }
+    var downloadingChapterKey by remember { mutableStateOf<String?>(null) }
+    var downloadProgress by remember { mutableIntStateOf(0) }
+    val downloadedChapterKeys = remember {
+        mutableStateListOf<String>().apply { addAll(OfflineChapterStore.downloadedKeys(context)) }
+    }
 
     LaunchedEffect(query, tab, activeSourceIds) {
         if (selected == null && selectedChapter == null && (tab == "Discover" || tab == "Home")) {
@@ -304,7 +309,11 @@ private fun NoirApp() {
         pages = emptyList()
         loading = true
         error = null
-        try { pages = SourceRegistry.byId(selected?.sourceId ?: "")?.pages(chapter)?.pages.orEmpty() }
+        try {
+            val currentSeries = selected
+            val offlinePages = currentSeries?.let { OfflineChapterStore.localPages(context, it, chapter) }
+            pages = offlinePages ?: SourceRegistry.byId(currentSeries?.sourceId ?: "")?.pages(chapter)?.pages.orEmpty()
+        }
         catch (e: Exception) { error = e.message ?: "Could not load chapter pages." }
         finally { loading = false }
     }
@@ -333,7 +342,8 @@ private fun NoirApp() {
                 )
                 selected != null -> DetailScreen(
                     selected!!, chapters, saved.any { it.id == selected!!.id && it.sourceId == selected!!.sourceId },
-                    bookmarkedChapterKeys.toSet(), loading, error,
+                    bookmarkedChapterKeys.toSet(), downloadedChapterKeys.toSet(),
+                    downloadingChapterKey, downloadProgress, loading, error,
                     onBack = { selected = null },
                     onSave = {
                         val item = selected!!
@@ -343,7 +353,28 @@ private fun NoirApp() {
                         val key = "${selected!!.sourceId}:${chapter.id}"
                         if (key in bookmarkedChapterKeys) bookmarkedChapterKeys.remove(key) else bookmarkedChapterKeys.add(key)
                     },
-                    onChapter = { selectedChapter = it }
+                    onChapter = { selectedChapter = it },
+                    onDownloadChapter = { chapter ->
+                        val item = selected!!
+                        val key = OfflineChapterStore.key(item, chapter)
+                        if (key !in downloadedChapterKeys && downloadingChapterKey == null) {
+                            downloadingChapterKey = key
+                            downloadProgress = 0
+                            scope.launch {
+                                try {
+                                    OfflineChapterStore.download(context.applicationContext, item, chapter) { done, total ->
+                                        downloadProgress = ((done * 100f) / total).toInt()
+                                    }
+                                    if (key !in downloadedChapterKeys) downloadedChapterKeys.add(key)
+                                } catch (e: Exception) {
+                                    error = "Download failed: ${e.message ?: "Check your connection."}"
+                                } finally {
+                                    downloadingChapterKey = null
+                                    downloadProgress = 0
+                                }
+                            }
+                        }
+                    }
                 )
                 tab == "Sources" -> SourcesScreen(
                     enabledSourceIds = activeSourceIds.toSet(),
@@ -658,9 +689,10 @@ private fun Cover(url: String?, modifier: Modifier = Modifier) {
 @Composable
 private fun DetailScreen(
     series: Series, chapters: List<Chapter>, saved: Boolean, bookmarkedChapterKeys: Set<String>,
+    downloadedChapterKeys: Set<String>, downloadingChapterKey: String?, downloadProgress: Int,
     loading: Boolean, error: String?,
     onBack: () -> Unit, onSave: () -> Unit, onToggleChapterBookmark: (Chapter) -> Unit,
-    onChapter: (Chapter) -> Unit
+    onChapter: (Chapter) -> Unit, onDownloadChapter: (Chapter) -> Unit
 ) {
     var synopsisExpanded by remember(series.id) { mutableStateOf(false) }
     val synopsis = series.description.ifBlank { "No synopsis is available for this title yet." }
@@ -821,6 +853,24 @@ private fun DetailScreen(
                                 contentDescription = "Bookmark chapter",
                                 tint = if ("${series.sourceId}:${chapter.id}" in bookmarkedChapterKeys) Color(0xFFD6C5F2) else Muted
                             )
+                        }
+                        val downloadKey = OfflineChapterStore.key(series, chapter)
+                        val isDownloaded = downloadKey in downloadedChapterKeys
+                        val isDownloading = downloadKey == downloadingChapterKey
+                        IconButton(
+                            onClick = { onDownloadChapter(chapter) },
+                            enabled = !isDownloaded && !isDownloading && downloadingChapterKey == null
+                        ) {
+                            when {
+                                isDownloading -> CircularProgressIndicator(
+                                    progress = { downloadProgress / 100f },
+                                    color = Color(0xFFD6C5F2),
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                                isDownloaded -> Icon(Icons.Rounded.CheckCircle, "Downloaded", tint = Color(0xFF9FC29A))
+                                else -> Icon(Icons.Rounded.Download, "Download chapter", tint = Muted)
+                            }
                         }
                         Icon(Icons.Rounded.PlayArrow, null, tint = Color(0xFFD6C5F2), modifier = Modifier.size(23.dp))
                     }
