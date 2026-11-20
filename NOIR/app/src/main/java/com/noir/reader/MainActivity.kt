@@ -6,7 +6,11 @@ import android.media.AudioManager
 import android.media.MediaPlayer
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -29,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
@@ -41,6 +46,9 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 
 private val Black = Color(0xFF070708)
 private val Panel = Color(0xFF17171A)
@@ -71,7 +79,41 @@ private fun NoirApp() {
     var chapters by remember { mutableStateOf<List<Chapter>>(emptyList()) }
     var pages by remember { mutableStateOf<List<String>>(emptyList()) }
     var catalogue by remember { mutableStateOf<List<Series>>(emptyList()) }
-    val saved = remember { mutableStateListOf<Series>() }
+    val saved = remember {
+        mutableStateListOf<Series>().apply {
+            runCatching {
+                val stored = JSONArray(prefs.getString("saved_series", "[]"))
+                for (index in 0 until stored.length()) {
+                    val item = stored.optJSONObject(index) ?: continue
+                    add(
+                        Series(
+                            id = item.optString("id"),
+                            title = item.optString("title"),
+                            description = item.optString("description"),
+                            coverUrl = item.optString("coverUrl").takeIf { it.isNotBlank() },
+                            sourceId = item.optString("sourceId"),
+                            sourceName = item.optString("sourceName")
+                        )
+                    )
+                }
+            }
+        }
+    }
+    LaunchedEffect(saved.toList()) {
+        val stored = JSONArray()
+        saved.forEach { item ->
+            stored.put(
+                JSONObject()
+                    .put("id", item.id)
+                    .put("title", item.title)
+                    .put("description", item.description)
+                    .put("coverUrl", item.coverUrl ?: "")
+                    .put("sourceId", item.sourceId)
+                    .put("sourceName", item.sourceName)
+            )
+        }
+        prefs.edit().putString("saved_series", stored.toString()).apply()
+    }
     var loading by remember { mutableStateOf(false) }
     var showIntro by remember { mutableStateOf(launchIntro) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -267,7 +309,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
 
 @Composable
 private fun CoverTile(series: Series, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+    Column(Modifier.fillMaxWidth().animateContentSize(tween(220)).clickable(onClick = onClick)) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.70f).clip(RoundedCornerShape(17.dp)).background(Color(0xFF1C1A21))) {
             Cover(series.coverUrl, Modifier.fillMaxSize())
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x22000000), Color(0x99000000)))))
@@ -487,15 +529,28 @@ private fun BottomNav(tab: String, onTab: (String) -> Unit) {
     ) {
         listOf("Home" to Icons.Rounded.Home, "Discover" to Icons.Rounded.Explore, "Library" to Icons.Rounded.Bookmarks, "Profile" to Icons.Rounded.Person).forEach { (label, icon) ->
             val active = tab == label
+            val pillColor by animateColorAsState(
+                targetValue = if (active) Color(0xFF393342) else Color.Transparent,
+                animationSpec = tween(260), label = "nav-pill-$label"
+            )
+            val iconScale by animateFloatAsState(
+                targetValue = if (active) 1.08f else 1f,
+                animationSpec = spring(dampingRatio = 0.62f, stiffness = 420f),
+                label = "nav-icon-$label"
+            )
+            val labelColor by animateColorAsState(
+                targetValue = if (active) White else Color(0xFF89858F),
+                animationSpec = tween(220), label = "nav-label-$label"
+            )
             Column(
                 Modifier.weight(1f).clip(CircleShape)
-                    .background(if (active) Brush.verticalGradient(listOf(Color(0xFF51495F), Color(0xFF292531))) else Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)))
+                    .background(pillColor)
                     .clickable { onTab(label) }.padding(vertical = 9.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(icon, null, tint = if (active) White else Color(0xFF89858F), modifier = Modifier.size(18.dp))
+                Icon(icon, null, tint = labelColor, modifier = Modifier.size(18.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale })
                 Spacer(Modifier.height(3.dp))
-                Text(label, color = if (active) White else Color(0xFF89858F), fontSize = 8.sp, letterSpacing = .3.sp)
+                Text(label, color = labelColor, fontSize = 8.sp, letterSpacing = .3.sp)
             }
         }
     }
@@ -527,11 +582,14 @@ private fun EmptyState(title: String, message: String) {
 }
 
 @Composable
-private fun NoirLogoMark(size: androidx.compose.ui.unit.Dp) {
+private fun NoirLogoMark(
+    size: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier
+) {
     Image(
         painter = painterResource(id = R.drawable.noir_app_icon),
         contentDescription = "NOIR emblem",
-        modifier = Modifier.size(size),
+        modifier = modifier.size(size),
         contentScale = ContentScale.Fit
     )
 }
@@ -540,6 +598,8 @@ private fun NoirLogoMark(size: androidx.compose.ui.unit.Dp) {
 private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
     val context = LocalContext.current
     val alpha = remember { Animatable(0f) }
+    val logoScale = remember { Animatable(0.84f) }
+    val logoRotation = remember { Animatable(-4f) }
     LaunchedEffect(Unit) {
         var player: MediaPlayer? = null
         try {
@@ -552,18 +612,25 @@ private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
                         .onFailure { runCatching { mediaPlayer.release() }; player = null }
                 }
             }
-            alpha.animateTo(1f, tween(520))
+            kotlinx.coroutines.coroutineScope {
+                launch { alpha.animateTo(1f, tween(520)) }
+                launch { logoScale.animateTo(1f, tween(760)) }
+                launch { logoRotation.animateTo(0f, tween(760)) }
+            }
             delay(780)
             alpha.animateTo(0f, tween(380))
         } catch (_: Exception) {
         } finally {
-            player?.let { runCatching { it.setOnCompletionListener(null); it.release() } }
+            player?.let { mediaPlayer ->
+                runCatching { if (mediaPlayer.isPlaying) mediaPlayer.stop() }
+                runCatching { mediaPlayer.release() }
+            }
             onFinished()
         }
     }
     Box(Modifier.fillMaxSize().background(Black).graphicsLayer { this.alpha = alpha.value }, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            NoirLogoMark(96.dp)
+            NoirLogoMark(96.dp, Modifier.graphicsLayer { scaleX = logoScale.value; scaleY = logoScale.value; rotationZ = logoRotation.value })
             Spacer(Modifier.height(8.dp))
             Image(
                 painter = painterResource(id = R.drawable.noir_intro_wordmark),
