@@ -208,9 +208,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                         Text("NOIR  /  YOUR READING ROOM", color = Muted, fontSize = 9.sp, letterSpacing = 2.1.sp)
                         Text("Good stories.\nNo distractions.", color = White, fontSize = 31.sp, lineHeight = 35.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    Box(Modifier.size(43.dp).clip(CircleShape).background(Color(0xFF211E2A)).border(1.dp, Color(0xFF514A60), CircleShape), contentAlignment = Alignment.Center) {
-                        Text("N", color = White, fontSize = 27.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
-                    }
+                    NoirLogoMark(43.dp)
                 }
             }
             item {
@@ -305,9 +303,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, onIntroSoun
         Text("Profile", color = White, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(22.dp))
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Panel).padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(54.dp).clip(CircleShape).background(Color(0xFF303039)), contentAlignment = Alignment.Center) {
-                Text("N", color = White, fontSize = 32.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
-            }
+            NoirLogoMark(54.dp)
             Column(Modifier.weight(1f).padding(start = 14.dp)) {
                 Text("NOIR READER", color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text("Your personal reading space", color = Muted, fontSize = 10.sp)
@@ -529,6 +525,26 @@ private fun EmptyState(title: String, message: String) {
 }
 
 @Composable
+private fun NoirLogoMark(size: androidx.compose.ui.unit.Dp) {
+    Box(
+        Modifier.size(size).clip(RoundedCornerShape(size * 0.28f))
+            .background(Brush.linearGradient(listOf(Color(0xFF393542), Color(0xFF111016), Color(0xFF070708))))
+            .border(1.dp, Color(0xFFAAA2B9).copy(alpha = .58f), RoundedCornerShape(size * 0.28f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0x665D566F), Color.Transparent), radius = size.value * 0.85f)))
+        Text("N", color = Color(0xFFF0EDF5), fontSize = size.value * .73f.sp, fontWeight = FontWeight.Normal,
+            fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
+        Box(Modifier.width(size * 1.02f).height(size * .43f).rotate(-25f)
+            .border((size.value / 85f).coerceAtLeast(.8f).dp, Color(0xFFD2C9E6).copy(alpha = .88f), CircleShape))
+        Text("✦", color = Color(0xFFF3F0FA), fontSize = size.value * .18f.sp,
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = size * .14f, end = size * .16f))
+        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(.58f).height(size * .13f)
+            .rotate(-25f).background(Brush.horizontalGradient(listOf(Color.Transparent, Color(0x557F7694), Color.Transparent))))
+    }
+}
+
+@Composable
 private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
     val context = LocalContext.current
     val alpha = remember { Animatable(0f) }
@@ -555,13 +571,7 @@ private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
     }
     Box(Modifier.fillMaxSize().background(Black).graphicsLayer { this.alpha = alpha.value }, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(104.dp).clip(RoundedCornerShape(30.dp))
-                .background(Brush.linearGradient(listOf(Color(0xFF292832), Color(0xFF09090D))))
-                .border(1.dp, Silver.copy(alpha = .52f), RoundedCornerShape(30.dp)), contentAlignment = Alignment.Center) {
-                Text("N", color = White, fontSize = 72.sp, fontWeight = FontWeight.Light, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
-                Box(Modifier.width(106.dp).height(48.dp).rotate(-25f).border(1.2.dp, Color(0xFFB9B2D2).copy(alpha = .82f), CircleShape))
-                Text("✦", color = Color(0xFFE8E4F5), fontSize = 17.sp, modifier = Modifier.align(Alignment.TopEnd).padding(top = 15.dp, end = 18.dp))
-            }
+            NoirLogoMark(104.dp)
             Spacer(Modifier.height(22.dp))
             Text("NOIR", color = White, fontSize = 29.sp, fontWeight = FontWeight.Normal, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif, letterSpacing = 7.sp)
             Spacer(Modifier.height(9.dp))
