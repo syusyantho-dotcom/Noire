@@ -7,12 +7,6 @@ import android.media.MediaPlayer
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.animateColorAsState
@@ -340,6 +334,10 @@ private fun NoirApp() {
         selected != null -> "detail:" + selected?.sourceId + ":" + selected?.id
         else -> "tab:" + tab
     }
+    var routeVisible by remember(routeKey) { mutableStateOf(false) }
+    LaunchedEffect(routeKey) { routeVisible = true }
+    val routeAlpha by animateFloatAsState(if (routeVisible) 1f else 0f, tween(190), label = "noir-route-fade")
+    val routeScale by animateFloatAsState(if (routeVisible) 1f else 0.985f, tween(220), label = "noir-route-scale")
 
     LaunchedEffect(query, tab, activeSourceIds) {
         if (selected == null && selectedChapter == null && (tab == "Discover" || tab == "Home")) {
@@ -420,14 +418,12 @@ private fun NoirApp() {
     MaterialTheme(colorScheme = darkColorScheme(background = Black, surface = Panel, primary = Silver, onBackground = White, onSurface = White)) {
         Surface(Modifier.fillMaxSize(), color = Black) {
           Box(Modifier.fillMaxSize()) {
-            AnimatedContent(
-                targetState = routeKey,
-                transitionSpec = {
-                    (fadeIn(tween(230)) + slideInHorizontally(tween(280)) { it / 16 }) togetherWith
-                        (fadeOut(tween(170)) + slideOutHorizontally(tween(210)) { -it / 28 })
-                },
-                label = "noir-screen-transition"
-            ) { _ ->
+            Box(Modifier.fillMaxSize().graphicsLayer {
+                alpha = routeAlpha
+                scaleX = routeScale
+                scaleY = routeScale
+            }) {
+            key(routeKey) {
             when {
                 selectedChapter != null -> ReaderScreen(
                     selected, selectedChapter!!, pages, loading, error,
@@ -508,6 +504,7 @@ private fun NoirApp() {
                     { showAbout = true }, { tab = it })
                 tab == "Home" -> HomeScreen(catalogue, loading, error, openSeries, { tab = it })
                 else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, matureContentEnabled, { tab = it })
+            }
             }
             }
             if (showAbout) AlertDialog(
@@ -659,7 +656,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                         items(catalogue.take(12), key = { "${it.sourceId}-${it.id}" }) { series ->
                             Column(Modifier.width(132.dp).clickable { onOpen(series) }) {
                                 Box(Modifier.fillMaxWidth().height(178.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF201D26))) {
-                                    Cover(series.coverUrl, Modifier.fillMaxSize())
+                                    SeriesCover(series, Modifier.fillMaxSize())
                                     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x44000000), Color(0xAA000000)))))
                                     Text(series.sourceName.uppercase(), color = Color(0xFFE4DDEC), fontSize = 7.sp, letterSpacing = 1.sp, modifier = Modifier.align(Alignment.BottomStart).padding(10.dp))
                                 }
@@ -691,10 +688,29 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
 }
 
 @Composable
+private fun SeriesCover(series: Series, modifier: Modifier = Modifier) {
+    Box(modifier) {
+        SeriesCover(series, Modifier.fillMaxSize())
+        val source = SourceRegistry.byId(series.sourceId)
+        if (source != null) {
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(7.dp).size(34.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xCC111016))
+                    .border(1.dp, Color(0x66D8CBE8), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                SourceIcon(source, Modifier.fillMaxSize().padding(2.dp))
+            }
+        }
+    }
+}
+
+@Composable
 private fun CoverTile(series: Series, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().animateContentSize(tween(220)).clickable(onClick = onClick)) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.70f).clip(RoundedCornerShape(17.dp)).background(Color(0xFF1C1A21))) {
-            Cover(series.coverUrl, Modifier.fillMaxSize())
+            SeriesCover(series, Modifier.fillMaxSize())
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x22000000), Color(0x99000000)))))
             Box(Modifier.align(Alignment.TopEnd).padding(8.dp).clip(RoundedCornerShape(20.dp)).background(Color(0x9909080D)).padding(horizontal = 8.dp, vertical = 5.dp)) {
                 Text(series.sourceName.uppercase(), color = Color(0xFFE0D9E9), fontSize = 7.sp, letterSpacing = 1.sp)
@@ -710,7 +726,7 @@ private fun CoverTile(series: Series, onClick: () -> Unit) {
 @Composable
 private fun HomeFeatureRow(series: Series, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-        Cover(series.coverUrl, Modifier.size(65.dp, 84.dp))
+        SeriesCover(series, Modifier.size(65.dp, 84.dp))
         Column(Modifier.weight(1f).padding(horizontal = 13.dp)) {
             Text(series.title, color = White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(5.dp))
@@ -786,7 +802,7 @@ private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, onC
 @Composable
 private fun SeriesRow(series: Series, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel).clickable(onClick = onClick).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Cover(series.coverUrl, Modifier.size(82.dp, 112.dp))
+        SeriesCover(series, Modifier.size(82.dp, 112.dp))
         Column(Modifier.weight(1f).padding(start = 13.dp, end = 7.dp)) {
             Text(series.title, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(7.dp))
@@ -855,7 +871,7 @@ private fun DetailScreen(
                     Modifier.fillMaxWidth().height(340.dp)
                         .background(Color(0xFF17151C))
                 ) {
-                    Cover(series.coverUrl, Modifier.fillMaxSize())
+                    SeriesCover(series, Modifier.fillMaxSize())
                     Box(
                         Modifier.fillMaxSize().background(
                             Brush.verticalGradient(
@@ -1677,7 +1693,7 @@ private fun LibraryScreen(
                     item { Text("PICK UP WHERE YOU LEFT OFF", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold) }
                     items(recent.take(8), key = { "recent-${it.sourceId}-${it.id}" }) { series ->
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF17151C)).clickable { onOpen(series) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(54.dp, 68.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF28232F))) { Cover(series.coverUrl, Modifier.fillMaxSize()) }
+                            Box(Modifier.size(54.dp, 68.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF28232F))) { SeriesCover(series, Modifier.fillMaxSize()) }
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(series.title, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
