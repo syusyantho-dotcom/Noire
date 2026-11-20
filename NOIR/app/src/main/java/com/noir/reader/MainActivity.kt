@@ -502,7 +502,7 @@ private fun NoirApp() {
                     { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
                     { matureContentEnabled = it; prefs.edit().putBoolean("mature_content_18_plus", it).apply() },
                     { showAbout = true }, { navigateTab(it) })
-                tab == "Home" -> HomeScreen(catalogue, loading, error, openSeries, { navigateTab(it) })
+                tab == "Home" -> HomeScreen(catalogue, loading, error, recentlyRead.toList(), saved.toList(), openSeries, { navigateTab(it) })
                 else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, matureContentEnabled, { tab = it })
             }
             }
@@ -592,7 +592,7 @@ private fun CatalogueScreen(
 }
 
 @Composable
-private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?, onOpen: (Series) -> Unit, onTab: (String) -> Unit) {
+private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?, recentlyRead: List<Series>, saved: List<Series>, onOpen: (Series) -> Unit, onTab: (String) -> Unit) {
     val featured = catalogue.firstOrNull()
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         LazyColumn(
@@ -612,7 +612,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
             }
             item {
                 Box(Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(27.dp)).background(Brush.linearGradient(listOf(Color(0xFF282333), Color(0xFF111014))))) {
-                    featured?.coverUrl?.let { url -> AsyncImage(model = url, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                    featured?.let { SeriesCover(it, Modifier.fillMaxSize()) }
                     Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color(0xF5070709), Color(0xAA070709), Color(0x18070709)))))
                     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x22070709), Color(0x22070709), Color(0xF5070709)))))
                     Column(Modifier.align(Alignment.TopStart).padding(19.dp)) {
@@ -636,6 +636,9 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                         }
                     }
                 }
+            }
+            if (recentlyRead.isNotEmpty()) item {
+                HomeSeriesShelf("PICK UP AGAIN", "YOUR READING JOURNEY", recentlyRead.take(10), "OPEN SERIES", onOpen)
             }
             item {
                 Row(verticalAlignment = Alignment.Bottom) {
@@ -669,6 +672,9 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                     }
                 }
             }
+            if (saved.isNotEmpty()) item {
+                HomeSeriesShelf("YOUR COLLECTION", "SAVED TO YOUR LIBRARY", saved.take(10), "VIEW TITLE", onOpen)
+            }
             item {
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Brush.linearGradient(listOf(Color(0xFF262131), Color(0xFF111014)))).border(1.dp, Color(0xFF393342), RoundedCornerShape(22.dp)).clickable { onTab("Discover") }.padding(19.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -684,6 +690,41 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
             item { Text("NOIR  •  MANGA  •  MANHWA  •  MORE", color = Color(0xFF625D69), fontSize = 8.sp, letterSpacing = 2.sp, modifier = Modifier.fillMaxWidth().padding(top = 1.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
         }
         BottomNav("Home", onTab)
+    }
+}
+
+
+@Composable
+private fun HomeSeriesShelf(
+    title: String,
+    eyebrow: String,
+    items: List<Series>,
+    actionLabel: String,
+    onOpen: (Series) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column {
+            Text(eyebrow, color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 2.sp)
+            Text(title, color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(end = 4.dp)) {
+            items(items, key = { "shelf-${it.sourceId}-${it.id}" }) { series ->
+                Column(
+                    Modifier.width(116.dp).clip(RoundedCornerShape(17.dp))
+                        .background(Color(0xFF141318)).clickable { onOpen(series) }
+                ) {
+                    Box(Modifier.fillMaxWidth().height(154.dp).background(Color(0xFF211D27))) {
+                        SeriesCover(series, Modifier.fillMaxSize())
+                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000)))))
+                    }
+                    Column(Modifier.padding(horizontal = 9.dp, vertical = 9.dp)) {
+                        Text(series.title, color = White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, lineHeight = 13.sp, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(5.dp))
+                        Text(actionLabel, color = Color(0xFFC8B8D8), fontSize = 7.sp, letterSpacing = .8.sp)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1258,7 +1299,10 @@ private fun SourcesScreen(
         sourcePrefs.edit().putString("pinned_sources", stored.toString()).apply()
     }
     var selectedFilter by remember { mutableStateOf("All") }
+    var selectedCategory by remember { mutableStateOf("All") }
     var sourceQuery by remember { mutableStateOf("") }
+    val sourceChecks = remember { mutableStateMapOf<String, String>() }
+    val sourceScope = rememberCoroutineScope()
 
     val entries = remember {
         SourceRegistry.sources.sortedWith(
@@ -1266,17 +1310,18 @@ private fun SourcesScreen(
                 .thenBy { it.name.lowercase() }
         )
     }
+    val categories = listOf("All") + entries.map { it.category }.filter { it.isNotBlank() }.distinct().sorted()
     val filtered = entries.filter { entry ->
         val matchesQuery = entry.name.contains(sourceQuery, ignoreCase = true) ||
             entry.id.contains(sourceQuery, ignoreCase = true) ||
             entry.language.contains(sourceQuery, ignoreCase = true) ||
             entry.category.contains(sourceQuery, ignoreCase = true)
-        matchesQuery && when (selectedFilter) {
+        matchesQuery && (selectedCategory == "All" || entry.category.equals(selectedCategory, ignoreCase = true)) && when (selectedFilter) {
             "Enabled" -> entry.id in enabledSourceIds
             "Pinned" -> entry.id in pinned
             else -> true
         }
-    }
+    }.sortedWith(compareBy<MangaSource> { it.isBroken }.thenBy { if (it.id in pinned) 0 else 1 }.thenBy { it.name.lowercase() })
     val enabledCount = enabledSourceIds.count { id -> entries.any { it.id == id } }
 
     Column(Modifier.fillMaxSize().background(Black).statusBarsPadding()) {
@@ -1364,10 +1409,21 @@ private fun SourcesScreen(
                     }
                 }
             }
+            Spacer(Modifier.height(10.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                items(categories) { category ->
+                    val active = selectedCategory == category
+                    Box(Modifier.clip(RoundedCornerShape(50)).background(if (active) Color(0xFF3A3044) else Color(0xFF17161B))
+                        .border(1.dp, if (active) Color(0xFF806D91) else Color(0xFF302C35), RoundedCornerShape(50))
+                        .clickable { selectedCategory = category }.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        Text(category.uppercase(), color = if (active) Color(0xFFEDE3F4) else Muted, fontSize = 8.sp, letterSpacing = .7.sp)
+                    }
+                }
+            }
             Spacer(Modifier.height(13.dp))
         }
         LazyVerticalGrid(
-            columns = GridCells.Fixed(4),
+            columns = GridCells.Fixed(2),
             modifier = Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(start = 15.dp, end = 15.dp, top = 2.dp, bottom = 18.dp),
             horizontalArrangement = Arrangement.spacedBy(7.dp),
@@ -1376,72 +1432,68 @@ private fun SourcesScreen(
             items(filtered, key = { it.id }) { entry ->
                 val active = entry.id in enabledSourceIds
                 val isPinned = entry.id in pinned
+                val check = sourceChecks[entry.id]
                 Column(
-                    Modifier.clip(RoundedCornerShape(16.dp))
-                        .clickable(enabled = !entry.isBroken) { onOpenSource(entry) }
-                        .padding(vertical = 5.dp, horizontal = 2.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                        .background(Brush.linearGradient(listOf(Color(0xFF201C26), Color(0xFF111014))))
+                        .border(1.dp, if (active) Color(0xFF62516F) else Color(0xFF302C35), RoundedCornerShape(18.dp))
+                        .padding(11.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Box(
-                        Modifier.size(66.dp).clip(RoundedCornerShape(19.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    if (active) listOf(Color(0xFF4A3A52), Color(0xFF211C27))
-                                    else listOf(Color(0xFF29272D), Color(0xFF171619))
-                                )
-                            )
-                            .border(1.dp, if (active) Color(0xFF8C769A) else Color(0xFF3C3740), RoundedCornerShape(19.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        SourceIcon(entry, Modifier.fillMaxSize().padding(2.dp))
-                        if (active) {
-                            Box(Modifier.align(Alignment.BottomEnd).padding(5.dp).size(8.dp).clip(CircleShape).background(Color(0xFF9DC49A)))
-                        } else {
-                            Box(Modifier.align(Alignment.BottomEnd).padding(5.dp).clip(RoundedCornerShape(5.dp)).background(Color(0xFF37313D)).padding(horizontal = 4.dp, vertical = 2.dp)) {
-                                Text(if (entry.isBroken) "FIX" else "ADD", color = Color(0xFFBDB0C5), fontSize = 5.sp, letterSpacing = .5.sp)
-                            }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF30283A)), contentAlignment = Alignment.Center) {
+                            SourceIcon(entry, Modifier.fillMaxSize().padding(2.dp))
+                        }
+                        Spacer(Modifier.width(9.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(entry.name, color = White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${entry.category} · ${entry.language.uppercase()}", color = Muted, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        IconButton(onClick = { pinned = if (isPinned) pinned - entry.id else pinned + entry.id }, modifier = Modifier.size(30.dp)) {
+                            Icon(Icons.Rounded.PushPin, if (isPinned) "Unpin source" else "Pin source",
+                                tint = if (isPinned) Color(0xFFD9C4E9) else Muted, modifier = Modifier.size(16.dp))
                         }
                     }
-                    Spacer(Modifier.height(7.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                        Text(entry.name, color = if (active) White else Silver, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (isPinned) {
-                            Spacer(Modifier.width(2.dp))
-                            Icon(Icons.Rounded.PushPin, null, tint = Color(0xFFC9B5D7), modifier = Modifier.size(9.dp))
-                        }
-                    }
-                    Text(
-                        when {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(6.dp).clip(CircleShape).background(
+                            when { entry.isBroken -> Color(0xFFE0A0A0); check == "ONLINE" -> Color(0xFF9FCB9A); check == "ERROR" -> Color(0xFFE0A0A0); else -> if (active) Color(0xFF9FC29A) else Color(0xFF77717D) }
+                        ))
+                        Spacer(Modifier.width(6.dp))
+                        Text(when {
                             entry.isBroken -> "FLAGGED"
-                            active -> "ENABLED"
+                            check == "CHECKING" -> "CHECKING…"
+                            check == "ONLINE" -> "RESPONDING"
+                            check == "EMPTY" -> "NO TITLES RETURNED"
+                            check == "ERROR" -> "CONNECTION FAILED"
+                            active -> "ENABLED · NOT TESTED"
                             else -> "AVAILABLE"
-                        },
-                        color = when {
-                            entry.isBroken -> Color(0xFFE0A8A8)
-                            active -> Color(0xFF9FC29A)
-                            else -> Muted
-                        },
-                        fontSize = 6.sp, letterSpacing = .6.sp
-                    )
-                    Text(
-                        "${entry.category} · ${entry.language.uppercase()}",
-                        color = Muted, fontSize = 5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        if (active) "Disable" else "Enable source",
-                        color = if (active) Color(0xFFB9D3B1) else Color(0xFFE3D9EA),
-                        fontSize = 7.sp,
-                        modifier = Modifier.clickable(enabled = !entry.isBroken) {
-                            onToggleEnabled(entry.id)
-                        }.padding(top = 3.dp)
-                    )
-                    Text(
-                        if (isPinned) "Unpin" else "Pin source",
-                        color = Color(0xFFBCA9C9), fontSize = 7.sp,
-                        modifier = Modifier.clickable {
-                            pinned = if (isPinned) pinned - entry.id else pinned + entry.id
-                        }.padding(top = 3.dp)
-                    )
+                        }, color = when { check == "ERROR" || entry.isBroken -> Color(0xFFE0A0A0); check == "ONLINE" -> Color(0xFF9FCB9A); else -> Muted },
+                            fontSize = 7.sp, letterSpacing = .5.sp, modifier = Modifier.weight(1f))
+                        Text(if (isPinned) "PINNED" else "", color = Color(0xFFD0C0DE), fontSize = 6.sp)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                            .background(if (active) Color(0xFF332A3B) else Color(0xFF29252E))
+                            .clickable(enabled = !entry.isBroken) { onToggleEnabled(entry.id) }
+                            .padding(vertical = 9.dp), contentAlignment = Alignment.Center) {
+                            Text(if (active) "DISABLE" else "ENABLE", color = if (active) Color(0xFFD5C5E0) else White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Box(Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF17151B))
+                            .clickable(enabled = check != "CHECKING" && !entry.isBroken) {
+                                sourceChecks[entry.id] = "CHECKING"
+                                sourceScope.launch {
+                                    sourceChecks[entry.id] = try {
+                                        if (entry.popular(0).isNotEmpty()) "ONLINE" else "EMPTY"
+                                    } catch (_: Exception) { "ERROR" }
+                                }
+                            }.padding(vertical = 9.dp), contentAlignment = Alignment.Center) {
+                            Text(if (check == "CHECKING") "CHECKING…" else "CHECK", color = Color(0xFFE0D5E8), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Text("OPEN CATALOGUE  ↗", color = Color(0xFFC8B8D8), fontSize = 7.sp, letterSpacing = 1.sp,
+                        modifier = Modifier.fillMaxWidth().clickable(enabled = !entry.isBroken) { onOpenSource(entry) }.padding(top = 1.dp))
                 }
             }
         }
