@@ -858,7 +858,7 @@ private fun ReaderPageImage(
                 translationY = panY
             }
             .pointerInput(pageUrl) {
-                androidx.compose.foundation.gestures.detectTransformGestures { _, pan, gestureZoom, _ ->
+                detectTransformGestures { _, pan, gestureZoom, _ ->
                     val nextZoom = (zoom * gestureZoom).coerceIn(1f, 4f)
                     zoom = nextZoom
                     if (nextZoom <= 1.01f) {
@@ -871,7 +871,7 @@ private fun ReaderPageImage(
                 }
             }
             .pointerInput(pageUrl) {
-                androidx.compose.foundation.gestures.detectTapGestures(
+                detectTapGestures(
                     onDoubleTap = {
                         if (zoom > 1.05f) {
                             zoom = 1f
