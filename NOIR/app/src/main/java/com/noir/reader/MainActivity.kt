@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -117,6 +118,44 @@ private fun NoirApp() {
         }
         prefs.edit().putString("saved_series", stored.toString()).apply()
     }
+    val recentlyRead = remember {
+        mutableStateListOf<Series>().apply {
+            runCatching {
+                val stored = JSONArray(prefs.getString("recent_series", "[]"))
+                for (index in 0 until stored.length()) {
+                    val item = stored.optJSONObject(index) ?: continue
+                    add(Series(item.optString("id"), item.optString("title"), item.optString("description"),
+                        item.optString("coverUrl").takeIf { it.isNotBlank() }, item.optString("sourceId"), item.optString("sourceName")))
+                }
+            }
+        }
+    }
+    LaunchedEffect(recentlyRead.toList()) {
+        val stored = JSONArray()
+        recentlyRead.take(30).forEach { item ->
+            stored.put(JSONObject().put("id", item.id).put("title", item.title).put("description", item.description)
+                .put("coverUrl", item.coverUrl ?: "").put("sourceId", item.sourceId).put("sourceName", item.sourceName))
+        }
+        prefs.edit().putString("recent_series", stored.toString()).apply()
+    }
+    val readingProgress = remember {
+        mutableStateMapOf<String, Int>().apply {
+            runCatching {
+                val stored = JSONObject(prefs.getString("reading_progress", "{}"))
+                stored.keys().forEach { key -> put(key, stored.optInt(key, 0)) }
+            }
+        }
+    }
+    LaunchedEffect(readingProgress.toMap()) {
+        val stored = JSONObject()
+        readingProgress.forEach { (key, value) -> stored.put(key, value) }
+        prefs.edit().putString("reading_progress", stored.toString()).apply()
+    }
+    val openSeries: (Series) -> Unit = { item ->
+        recentlyRead.removeAll { it.id == item.id && it.sourceId == item.sourceId }
+        recentlyRead.add(0, item)
+        selected = item
+    }
     var loading by remember { mutableStateOf(false) }
     var showIntro by remember { mutableStateOf(launchIntro) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -157,7 +196,10 @@ private fun NoirApp() {
         Surface(Modifier.fillMaxSize(), color = Black) {
           Box(Modifier.fillMaxSize()) {
             when {
-                selectedChapter != null -> ReaderScreen(selected, selectedChapter!!, pages, loading, error) { selectedChapter = null }
+                selectedChapter != null -> ReaderScreen(selected, selectedChapter!!, pages, loading, error,
+                    readingProgress[selectedChapter!!.id] ?: 0,
+                    onProgress = { page -> readingProgress[selectedChapter!!.id] = page },
+                    onBack = { selectedChapter = null })
                 selected != null -> DetailScreen(
                     selected!!, chapters, saved.any { it.id == selected!!.id }, loading, error,
                     onBack = { selected = null },
@@ -168,18 +210,18 @@ private fun NoirApp() {
                     onChapter = { selectedChapter = it }
                 )
                 tab == "Sources" -> SourcesScreen { tab = it }
-                tab == "Library" -> LibraryScreen(saved.toList(), { selected = it }, { tab = it })
+                tab == "Library" -> LibraryScreen(saved.toList(), recentlyRead.toList(), openSeries, { tab = it })
                 tab == "Profile" -> ProfileScreen(introSound, launchIntro,
                     { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
                     { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
                     { showAbout = true }, { tab = it })
-                tab == "Home" -> HomeScreen(catalogue, loading, error, { selected = it }, { tab = it })
+                tab == "Home" -> HomeScreen(catalogue, loading, error, openSeries, { tab = it })
                 else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, { selected = it }, { tab = it })
             }
             if (showAbout) AlertDialog(
                 onDismissRequest = { showAbout = false },
                 title = { Text("About NOIR", color = White) },
-                text = { Text("Your dark, focused manga and manhwa reading space. Version 0.5.0.", color = Muted) },
+                text = { Text("Your dark, focused manga and manhwa reading space. Version 1.0.0.", color = Muted) },
                 confirmButton = { TextButton(onClick = { showAbout = false }) { Text("CLOSE", color = Silver) } },
                 containerColor = Panel
             )
@@ -614,7 +656,17 @@ private fun DetailScreen(
 }
 
 @Composable
-private fun ReaderScreen(series: Series?, chapter: Chapter, pages: List<String>, loading: Boolean, error: String?, onBack: () -> Unit) {
+private fun ReaderScreen(
+    series: Series?, chapter: Chapter, pages: List<String>, loading: Boolean, error: String?,
+    initialPage: Int, onProgress: (Int) -> Unit, onBack: () -> Unit
+) {
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage)
+    LaunchedEffect(pages.size, initialPage) {
+        if (pages.isNotEmpty()) listState.scrollToItem(initialPage.coerceIn(0, pages.lastIndex))
+    }
+    LaunchedEffect(listState.firstVisibleItemIndex, pages.size) {
+        if (pages.isNotEmpty()) onProgress(listState.firstVisibleItemIndex)
+    }
     Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().background(Black).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Rounded.Close, null, tint = White) }
@@ -622,13 +674,13 @@ private fun ReaderScreen(series: Series?, chapter: Chapter, pages: List<String>,
                 Text(series?.title ?: "NOIR READER", color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 Text(chapter.name, color = Muted, fontSize = 9.sp)
             }
-            Text("VERTICAL", color = Silver, fontSize = 8.sp, letterSpacing = 1.sp)
+            Text(if (pages.isEmpty()) "VERTICAL" else "${(listState.firstVisibleItemIndex + 1).coerceAtMost(pages.size)} / ${pages.size}", color = Silver, fontSize = 8.sp, letterSpacing = 1.sp)
         }
         when {
             loading && pages.isEmpty() -> LoadingState("Loading chapter pages…")
             error != null -> ErrorState(error)
             pages.isEmpty() -> EmptyState("No pages available", "This chapter may not have readable pages.")
-            else -> LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 items(pages) { page -> AsyncImage(model = page, contentDescription = "Comic page", modifier = Modifier.fillMaxWidth()) }
             }
         }
@@ -806,7 +858,7 @@ private fun SourcesScreen(onTab: (String) -> Unit) {
 }
 
 @Composable
-private fun LibraryScreen(items: List<Series>, onOpen: (Series) -> Unit, onTab: (String) -> Unit) {
+private fun LibraryScreen(items: List<Series>, recent: List<Series>, onOpen: (Series) -> Unit, onTab: (String) -> Unit) {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp)) {
             Spacer(Modifier.height(24.dp))
@@ -815,13 +867,29 @@ private fun LibraryScreen(items: List<Series>, onOpen: (Series) -> Unit, onTab: 
             Spacer(Modifier.height(5.dp))
             Text("SAVED TITLES", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 1.5.sp)
             Spacer(Modifier.height(18.dp))
-            if (items.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    EmptyState("Your library is waiting", "Open a series and tap the bookmark to keep it here.")
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
+                if (recent.isNotEmpty()) {
+                    item { Text("PICK UP WHERE YOU LEFT OFF", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold) }
+                    items(recent.take(8), key = { "recent-${it.sourceId}-${it.id}" }) { series ->
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF17151C)).clickable { onOpen(series) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(54.dp, 68.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF28232F))) { Cover(series.coverUrl, Modifier.fillMaxSize()) }
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(series.title, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Spacer(Modifier.height(4.dp))
+                                Text(series.sourceName.uppercase(), color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
+                                Spacer(Modifier.height(7.dp))
+                                Text("OPEN SERIES  ↗", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.sp)
+                            }
+                            Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
+                        }
+                    }
+                    item { Spacer(Modifier.height(7.dp)); Text("SAVED COLLECTION", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold) }
                 }
-            } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
-                    items(items, key = { it.id }) { SeriesRow(it) { onOpen(it) } }
+                if (items.isEmpty()) {
+                    item { EmptyState("Your library is waiting", "Save a series to keep it in your collection. Your recent titles will appear above.") }
+                } else {
+                    items(items, key = { "saved-${it.sourceId}-${it.id}" }) { SeriesRow(it) { onOpen(it) } }
                 }
             }
         }
