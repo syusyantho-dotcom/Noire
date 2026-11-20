@@ -690,7 +690,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
 @Composable
 private fun SeriesCover(series: Series, modifier: Modifier = Modifier) {
     Box(modifier) {
-        SeriesCover(series, Modifier.fillMaxSize())
+        Cover(series.coverUrl, Modifier.fillMaxSize())
         val source = SourceRegistry.byId(series.sourceId)
         if (source != null) {
             Box(
