@@ -702,9 +702,14 @@ private fun SourcesScreen(onTab: (String) -> Unit) {
     val sourcePrefs = remember { context.getSharedPreferences("noir_sources", Context.MODE_PRIVATE) }
     var pinned by remember {
         mutableStateOf<Set<String>>(runCatching<Set<String>> {
-            val stored = JSONArray(sourcePrefs.getString("pinned_sources", "[\\"mangadex\\"]"))
-            (0 until stored.length()).map { index: Int -> stored.optString(index) }.toSet()
-        }.getOrDefault(setOf("mangadex")))
+            val raw = sourcePrefs.getString("pinned_sources", null)
+            if (raw.isNullOrBlank()) {
+                setOf("mangadex")
+            } else {
+                val stored = JSONArray(raw)
+                (0 until stored.length()).map { index: Int -> stored.optString(index) }.toSet()
+            }
+        }.getOrDefault(setOf("mangadex")))       }.getOrDefault(setOf("mangadex")))
     }
     LaunchedEffect(pinned) {
         val stored = JSONArray()
