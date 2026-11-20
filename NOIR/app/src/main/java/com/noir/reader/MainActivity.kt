@@ -1534,6 +1534,21 @@ private fun ReaderScreen(
     val context = LocalContext.current
     val imageLoader = remember(context) { context.imageLoader }
     val isPaged = readerMode == "Horizontal" || readerMode == "Right to left"
+    var showChapterCinema by remember(chapter.id) { mutableStateOf(false) }
+    val cinemaProgress by animateFloatAsState(
+        targetValue = if (showChapterCinema) 1f else 0f,
+        animationSpec = tween(3000, easing = FastOutSlowInEasing),
+        label = "noir-cinema-progress"
+    )
+    LaunchedEffect(chapter.id, pages.size, loading) {
+        if (pages.isNotEmpty() && !loading && initialPage <= 0) {
+            showChapterCinema = true
+            delay(3000)
+            showChapterCinema = false
+        } else if (initialPage > 0) {
+            showChapterCinema = false
+        }
+    }
 
     LaunchedEffect(pages.size, initialPage, readerMode) {
         if (pages.isNotEmpty()) {
@@ -1674,6 +1689,80 @@ private fun ReaderScreen(
                     .border(1.dp, Color(0x557F788B), RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp))
                     .clickable { showReaderControls = true }, contentAlignment = Alignment.Center) {
                     Icon(Icons.Rounded.ChevronRight, "Show reader controls", tint = Color(0xFFE9E4EF), modifier = Modifier.size(18.dp))
+                }
+            }
+            AnimatedVisibility(
+                visible = showChapterCinema && pages.isNotEmpty(),
+                modifier = Modifier.fillMaxSize(),
+                enter = fadeIn(tween(520)),
+                exit = fadeOut(tween(420))
+            ) {
+                Box(Modifier.fillMaxSize().background(Color(0xFF08070A))) {
+                    series?.let { item ->
+                        SeriesCover(item, Modifier.fillMaxSize().graphicsLayer {
+                            alpha = 0.28f
+                            scaleX = 1.08f
+                            scaleY = 1.08f
+                        })
+                    }
+                    Box(Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(listOf(
+                            Color(0xAA070609), Color(0xCC08070A),
+                            Color(0xF2070608), Color(0xFF070608)
+                        ))
+                    ))
+                    Column(
+                        Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 34.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text("NOIR ORIGINAL PRESENTATION", color = Color(0xFFD6C5F2),
+                            fontSize = 8.sp, letterSpacing = 2.8.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(27.dp))
+                        Text(series?.title?.uppercase() ?: "YOUR STORY",
+                            color = Color(0xFFF4F0F7), fontSize = 25.sp, lineHeight = 31.sp,
+                            letterSpacing = 1.1.sp, fontWeight = FontWeight.SemiBold,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(15.dp))
+                        Box(Modifier.width(42.dp).height(1.dp).background(Color(0xFFD6C5F2)))
+                        Spacer(Modifier.height(15.dp))
+                        Text("CHAPTER " + chapter.number.ifBlank { chapter.name },
+                            color = Color(0xFFE4DCEB), fontSize = 11.sp,
+                            letterSpacing = 2.1.sp, fontWeight = FontWeight.Medium,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(8.dp))
+                        Text(chapter.name, color = Color(0xFFAAA2B2), fontSize = 10.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(35.dp))
+                        Box(Modifier.fillMaxWidth(0.62f).height(2.dp)
+                            .clip(RoundedCornerShape(2.dp)).background(Color(0x554D4656))) {
+                            Box(Modifier.fillMaxWidth(cinemaProgress.coerceIn(0f, 1f)).fillMaxHeight()
+                                .background(Color(0xFFD6C5F2)))
+                        }
+                        Spacer(Modifier.height(28.dp))
+                        Row(
+                            Modifier.clip(RoundedCornerShape(30.dp))
+                                .background(Color(0xFFEAE3F0))
+                                .clickable { showChapterCinema = false }
+                                .padding(horizontal = 22.dp, vertical = 13.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("BEGIN READING", color = Color(0xFF17131D),
+                                fontSize = 9.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.width(9.dp))
+                            Icon(Icons.Rounded.ArrowForward, null,
+                                tint = Color(0xFF17131D), modifier = Modifier.size(14.dp))
+                        }
+                        Spacer(Modifier.height(17.dp))
+                        Text("YOUR STORY CONTINUES", color = Color(0xFF8E8796),
+                            fontSize = 7.sp, letterSpacing = 2.sp)
+                    }
+                    Text("NOIR  /  THE ART OF GETTING LOST",
+                        color = Color(0xFF8C8494), fontSize = 7.sp, letterSpacing = 1.6.sp,
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 28.dp))
                 }
             }
         }
