@@ -965,7 +965,7 @@ private fun Modifier.noirPressScale(onClick: () -> Unit): Modifier {
         scaleY = scale
     }.clickable(
         interactionSource = interactionSource,
-        indication = androidx.compose.material.ripple.rememberRipple(bounded = true),
+        indication = null, // Press feedback is provided by the spring scale animation.
         onClick = onClick
     )
 }
