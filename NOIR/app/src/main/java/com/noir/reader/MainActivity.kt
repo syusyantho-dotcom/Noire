@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -526,22 +528,12 @@ private fun EmptyState(title: String, message: String) {
 
 @Composable
 private fun NoirLogoMark(size: androidx.compose.ui.unit.Dp) {
-    Box(
-        Modifier.size(size).clip(RoundedCornerShape(size * 0.28f))
-            .background(Brush.linearGradient(listOf(Color(0xFF393542), Color(0xFF111016), Color(0xFF070708))))
-            .border(1.dp, Color(0xFFAAA2B9).copy(alpha = .58f), RoundedCornerShape(size * 0.28f)),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0x665D566F), Color.Transparent), radius = size.value * 0.85f)))
-        Text("N", color = Color(0xFFF0EDF5), fontSize = (size.value * .73f).sp, fontWeight = FontWeight.Normal,
-            fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)
-        Box(Modifier.width(size * 1.02f).height(size * .43f).rotate(-25f)
-            .border((size.value / 85f).coerceAtLeast(.8f).dp, Color(0xFFD2C9E6).copy(alpha = .88f), CircleShape))
-        Text("✦", color = Color(0xFFF3F0FA), fontSize = (size.value * .18f).sp,
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = size * .14f, end = size * .16f))
-        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(.58f).height(size * .13f)
-            .rotate(-25f).background(Brush.horizontalGradient(listOf(Color.Transparent, Color(0x557F7694), Color.Transparent))))
-    }
+    Image(
+        painter = painterResource(id = R.drawable.noir_app_icon),
+        contentDescription = "NOIR emblem",
+        modifier = Modifier.size(size),
+        contentScale = ContentScale.Fit
+    )
 }
 
 @Composable
@@ -571,11 +563,14 @@ private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
     }
     Box(Modifier.fillMaxSize().background(Black).graphicsLayer { this.alpha = alpha.value }, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            NoirLogoMark(104.dp)
-            Spacer(Modifier.height(22.dp))
-            Text("NOIR", color = White, fontSize = 29.sp, fontWeight = FontWeight.Normal, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif, letterSpacing = 7.sp)
-            Spacer(Modifier.height(9.dp))
-            Text("MANGA  •  MANHWA  •  MORE", color = Muted, fontSize = 8.sp, letterSpacing = 2.4.sp)
+            NoirLogoMark(96.dp)
+            Spacer(Modifier.height(8.dp))
+            Image(
+                painter = painterResource(id = R.drawable.noir_intro_wordmark),
+                contentDescription = "NOIR — Manga, Manhwa, More",
+                modifier = Modifier.width(264.dp).height(156.dp),
+                contentScale = ContentScale.Fit
+            )
         }
     }
 }
