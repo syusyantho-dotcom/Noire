@@ -25,6 +25,8 @@ jobs:
 
       - name: Set up Android command-line tools
         uses: android-actions/setup-android@v3
+        with:
+          packages: ''
 
       - name: Install Android SDK packages
         run: |
@@ -36,7 +38,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      # Reuse one debug certificate between GitHub-hosted runners.
+      # Temporary cache only; stable release signing must use a protected keystore secret.
       - name: Restore persistent debug signing key
         uses: actions/cache@v4
         with:
