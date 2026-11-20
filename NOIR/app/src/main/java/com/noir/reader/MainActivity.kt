@@ -659,7 +659,7 @@ private fun NoirApp() {
                     { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
                     { matureContentEnabled = it; prefs.edit().putBoolean("mature_content_18_plus", it).apply() },
                     { showAbout = true }, { showWhatsNew = true }, { navigateTab(it) })
-                tab == "Home" -> HomeScreen(catalogue, loading, error, recentlyRead.toList(), saved.toList(), seriesProgress.toMap(), openSeries, { navigateTab(it) })
+                tab == "Home" -> HomeScreen(catalogue, loading, error, recentlyRead.toList(), saved.toList(), seriesProgress.toMap(), readingHistory.toMap(), openSeries, { item -> pendingResumeKey = "${item.sourceId}:${item.id}"; openSeries(item) }, { navigateTab(it) })
                 else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, matureContentEnabled, { tab = it })
             }
             }
@@ -802,7 +802,7 @@ private fun CatalogueScreen(
 }
 
 @Composable
-private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?, recentlyRead: List<Series>, saved: List<Series>, progressBySeries: Map<String, Float>, onOpen: (Series) -> Unit, onTab: (String) -> Unit) {
+private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?, recentlyRead: List<Series>, saved: List<Series>, progressBySeries: Map<String, Float>, readingHistory: Map<String, ReadingHistoryEntry>, onOpen: (Series) -> Unit, onResume: (Series) -> Unit, onTab: (String) -> Unit) {
     val featuredStories = catalogue.take(5)
     val heroPagerState = rememberPagerState(pageCount = { featuredStories.size.coerceAtLeast(1) })
     LaunchedEffect(featuredStories.size) {
@@ -953,8 +953,15 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                     }
                 }
             }
-            if (recentlyRead.isNotEmpty()) item {
-                HomeSeriesShelf("PICK UP AGAIN", "YOUR READING JOURNEY", recentlyRead.take(10), "OPEN SERIES", progressBySeries, onOpen)
+            if (recentlyRead.isNotEmpty()) {
+                item {
+                    val latest = recentlyRead.first()
+                    val history = readingHistory["${latest.sourceId}:${latest.id}"]
+                    HomeContinueCard(latest, history, progressBySeries["${latest.sourceId}:${latest.id}"] ?: 0f) { onResume(latest) }
+                }
+                if (recentlyRead.size > 1) item {
+                    HomeSeriesShelf("YOUR READING LIST", "MORE FROM YOUR JOURNEY", recentlyRead.drop(1).take(9), "CONTINUE", progressBySeries, onResume)
+                }
             }
             item {
                 Row(verticalAlignment = Alignment.Bottom) {
@@ -1015,6 +1022,34 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
 }
 
 
+@Composable
+private fun HomeContinueCard(series: Series, history: ReadingHistoryEntry?, overallProgress: Float, onResume: () -> Unit) {
+    val pageProgress = history?.let { (it.pageNumber.toFloat() / it.pageCount.coerceAtLeast(1)).coerceIn(0f, 1f) } ?: overallProgress.coerceIn(0f, 1f)
+    Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("YOUR STORY IS WAITING", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 1.9.sp)
+                Text("Continue reading", color = White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.35).sp)
+            }
+            Text("RESUME ↗", color = Color(0xFFD8C5F0), fontSize = 8.sp, letterSpacing = 1.sp, modifier = Modifier.clickable(onClick = onResume).padding(bottom = 3.dp))
+        }
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(listOf(Color(0xFF24212A), Color(0xFF121116), Color(0xFF19161E)))).border(1.dp, Color(0xFF3A3541), RoundedCornerShape(24.dp)).clickable(onClick = onResume).padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(Modifier.width(88.dp).height(116.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFF28232E))) {
+                SeriesCover(series, Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x55000000)))))
+                Box(Modifier.align(Alignment.TopStart).padding(7.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xCC111015)).padding(horizontal = 7.dp, vertical = 4.dp)) { Text("READING", color = Color(0xFFE4D8F0), fontSize = 6.sp, letterSpacing = .8.sp, fontWeight = FontWeight.Bold) }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text("PICK UP WHERE YOU LEFT OFF", color = Color(0xFFB8A9D0), fontSize = 7.sp, letterSpacing = 1.1.sp, maxLines = 1)
+                Text(series.title, color = White, fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(history?.chapterName?.takeIf { it.isNotBlank() } ?: "Your reading journey", color = Color(0xFFC3BEC9), fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(history?.let { "PAGE ${it.pageNumber.coerceAtMost(it.pageCount)} / ${it.pageCount}" } ?: "READY WHEN YOU ARE", color = Muted, fontSize = 8.sp, letterSpacing = .7.sp)
+                Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF46414C))) { Box(Modifier.fillMaxWidth(pageProgress).fillMaxHeight().background(Color(0xFFD8C5F0))) }
+                Row(verticalAlignment = Alignment.CenterVertically) { Text("CONTINUE", color = Color(0xFFE8DDF3), fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp); Spacer(Modifier.width(6.dp)); Icon(Icons.Rounded.ArrowForward, null, tint = Color(0xFFE8DDF3), modifier = Modifier.size(13.dp)) }
+            }
+        }
+    }
+}
 @Composable
 private fun HomeSeriesShelf(
     title: String,
