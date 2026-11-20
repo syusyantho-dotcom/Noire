@@ -796,7 +796,11 @@ private fun ReaderScreen(
 }
 
 @Composable
-private fun SourcesScreen(onTab: (String) -> Unit) {
+private fun SourcesScreen(
+    enabledSourceIds: Set<String>,
+    onToggleEnabled: (String) -> Unit,
+    onTab: (String) -> Unit
+) {
     val context = LocalContext.current
     val sourcePrefs = remember { context.getSharedPreferences("noir_sources", Context.MODE_PRIVATE) }
     var pinned by remember {
@@ -806,7 +810,7 @@ private fun SourcesScreen(onTab: (String) -> Unit) {
                 setOf("mangadex")
             } else {
                 val stored = JSONArray(raw)
-                (0 until stored.length()).map { index: Int -> stored.optString(index) }.toSet()
+                (0 until stored.length()).map { index -> stored.optString(index) }.toSet()
             }
         }.getOrDefault(setOf("mangadex")))
     }
@@ -817,21 +821,26 @@ private fun SourcesScreen(onTab: (String) -> Unit) {
     }
     var selectedFilter by remember { mutableStateOf("All") }
     var sourceQuery by remember { mutableStateOf("") }
-    val entries = listOf(
-        Triple("mangadex", "MangaDex", "ACTIVE"),
-        Triple("mangasee", "MangaSee", "PLANNED"),
-        Triple("mangareader", "MangaReader", "PLANNED"),
-        Triple("mangakakalot", "MangaKakalot", "PLANNED"),
-        Triple("mangapark", "MangaPark", "PLANNED"),
-        Triple("webtoon", "WEBTOON", "PLANNED"),
-        Triple("asura", "Asura Scans", "PLANNED"),
-        Triple("reaperscans", "Reaper Scans", "PLANNED")
-    )
-    val filtered = entries.filter {
-        (it.second.contains(sourceQuery, ignoreCase = true)) &&
-        (selectedFilter == "All" || (selectedFilter == "Active" && it.third == "ACTIVE") ||
-            (selectedFilter == "Pinned" && pinned.contains(it.first)))
+
+    val entries = remember {
+        SourceRegistry.sources.sortedWith(
+            compareBy<MangaSource> { it.isBroken }
+                .thenBy { it.name.lowercase() }
+        )
     }
+    val filtered = entries.filter { entry ->
+        val matchesQuery = entry.name.contains(sourceQuery, ignoreCase = true) ||
+            entry.id.contains(sourceQuery, ignoreCase = true) ||
+            entry.language.contains(sourceQuery, ignoreCase = true) ||
+            entry.category.contains(sourceQuery, ignoreCase = true)
+        matchesQuery && when (selectedFilter) {
+            "Enabled" -> entry.id in enabledSourceIds
+            "Pinned" -> entry.id in pinned
+            else -> true
+        }
+    }
+    val enabledCount = enabledSourceIds.count { id -> entries.any { it.id == id } }
+
     Column(Modifier.fillMaxSize().background(Black).statusBarsPadding()) {
         Row(
             Modifier.fillMaxWidth().padding(start = 12.dp, end = 20.dp, top = 12.dp),
@@ -860,21 +869,24 @@ private fun SourcesScreen(onTab: (String) -> Unit) {
                             Icon(Icons.Rounded.Explore, null, tint = Color(0xFFF0E7F7), modifier = Modifier.size(21.dp))
                         }
                         Spacer(Modifier.width(10.dp))
-                        Text("YOUR MANGA NETWORK", color = Color(0xFFE2D6EA), fontSize = 9.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold)
+                        Text("KOTATSU COMMUNITY NETWORK", color = Color(0xFFE2D6EA), fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.weight(1f))
-                        Text("${SourceRegistry.sources.size.toString().padStart(2, '0')} CONNECTED", color = Color(0xFFB9D3B1), fontSize = 8.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold)
+                        Text("${enabledCount.toString().padStart(2, '0')} ENABLED", color = Color(0xFFB9D3B1), fontSize = 8.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold)
                     }
                     Spacer(Modifier.height(17.dp))
                     Text("Read beyond\nthe boundaries.", color = White, fontSize = 25.sp, lineHeight = 29.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(7.dp))
-                    Text("Discover community catalogues and bring your favourite manga into one reading experience.", color = Color(0xFFB7B0BE), fontSize = 11.sp, lineHeight = 17.sp)
+                    Text(
+                        "Browse ${entries.size} community source parsers. Enable only the catalogues you want NOIR to search.",
+                        color = Color(0xFFB7B0BE), fontSize = 11.sp, lineHeight = 17.sp
+                    )
                     Spacer(Modifier.height(16.dp))
                     Row(
                         Modifier.clip(RoundedCornerShape(12.dp)).background(Color(0xFFEEE7F2))
                             .clickable { onTab("Discover") }.padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Browse connected source", color = Color(0xFF17121C), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("Browse enabled sources", color = Color(0xFF17121C), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.width(7.dp))
                         Icon(Icons.Rounded.ArrowForward, null, tint = Color(0xFF17121C), modifier = Modifier.size(14.dp))
                     }
@@ -884,18 +896,18 @@ private fun SourcesScreen(onTab: (String) -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("COMMUNITY SOURCES", color = Silver, fontSize = 9.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.weight(1f))
-                Text("${entries.size} CATALOGUES", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
+                Text("${entries.size} PARSERS", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
             }
             Spacer(Modifier.height(10.dp))
-            androidx.compose.material3.OutlinedTextField(
+            OutlinedTextField(
                 value = sourceQuery,
                 onValueChange = { sourceQuery = it },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                placeholder = { Text("Find a source…", color = Muted, fontSize = 12.sp) },
+                placeholder = { Text("Find a source or language…", color = Muted, fontSize = 12.sp) },
                 leadingIcon = { Icon(Icons.Rounded.Search, null, tint = Muted) },
                 shape = RoundedCornerShape(15.dp),
-                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = White, unfocusedTextColor = White,
                     focusedBorderColor = Color(0xFF786487), unfocusedBorderColor = Color(0xFF343039),
                     cursorColor = White, focusedContainerColor = Panel, unfocusedContainerColor = Panel
@@ -903,7 +915,7 @@ private fun SourcesScreen(onTab: (String) -> Unit) {
             )
             Spacer(Modifier.height(11.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("All", "Active", "Pinned").forEach { filter ->
+                listOf("All", "Enabled", "Pinned").forEach { filter ->
                     val active = selectedFilter == filter
                     Box(
                         Modifier.clip(RoundedCornerShape(50)).background(if (active) Color(0xFFE8DDEC) else Panel)
@@ -923,12 +935,12 @@ private fun SourcesScreen(onTab: (String) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(7.dp),
             verticalArrangement = Arrangement.spacedBy(13.dp)
         ) {
-            items(filtered, key = { it.first }) { entry ->
-                val active = entry.third == "ACTIVE"
-                val isPinned = pinned.contains(entry.first)
+            items(filtered, key = { it.id }) { entry ->
+                val active = entry.id in enabledSourceIds
+                val isPinned = entry.id in pinned
                 Column(
                     Modifier.clip(RoundedCornerShape(16.dp))
-                        .clickable(enabled = active) { onTab("Discover") }
+                        .clickable(enabled = !entry.isBroken) { onToggleEnabled(entry.id) }
                         .padding(vertical = 5.dp, horizontal = 2.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -944,7 +956,7 @@ private fun SourcesScreen(onTab: (String) -> Unit) {
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            entry.second.take(1).uppercase(),
+                            entry.name.take(1).uppercase(),
                             color = if (active) Color(0xFFF0E5F4) else Color(0xFF9A8F9F),
                             fontSize = 29.sp, fontWeight = FontWeight.Light
                         )
@@ -952,28 +964,42 @@ private fun SourcesScreen(onTab: (String) -> Unit) {
                             Box(Modifier.align(Alignment.BottomEnd).padding(5.dp).size(8.dp).clip(CircleShape).background(Color(0xFF9DC49A)))
                         } else {
                             Box(Modifier.align(Alignment.BottomEnd).padding(5.dp).clip(RoundedCornerShape(5.dp)).background(Color(0xFF37313D)).padding(horizontal = 4.dp, vertical = 2.dp)) {
-                                Text("SOON", color = Color(0xFFBDB0C5), fontSize = 5.sp, letterSpacing = .5.sp)
+                                Text(if (entry.isBroken) "FIX" else "ADD", color = Color(0xFFBDB0C5), fontSize = 5.sp, letterSpacing = .5.sp)
                             }
                         }
                     }
                     Spacer(Modifier.height(7.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                        Text(entry.second, color = if (active) White else Silver, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(entry.name, color = if (active) White else Silver, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (isPinned) {
                             Spacer(Modifier.width(2.dp))
                             Icon(Icons.Rounded.PushPin, null, tint = Color(0xFFC9B5D7), modifier = Modifier.size(9.dp))
                         }
                     }
-                    Text(if (active) "CONNECTED" else "NOT INSTALLED", color = if (active) Color(0xFF9FC29A) else Muted, fontSize = 6.sp, letterSpacing = .6.sp)
-                    if (true) {
-                        Text(
-                            if (isPinned) "Unpin" else "Pin source",
-                            color = Color(0xFFBCA9C9), fontSize = 7.sp,
-                            modifier = Modifier.clickable {
-                                pinned = if (isPinned) pinned - entry.first else pinned + entry.first
-                            }.padding(top = 3.dp)
-                        )
-                    }
+                    Text(
+                        when {
+                            entry.isBroken -> "FLAGGED"
+                            active -> "ENABLED"
+                            else -> "AVAILABLE"
+                        },
+                        color = when {
+                            entry.isBroken -> Color(0xFFE0A8A8)
+                            active -> Color(0xFF9FC29A)
+                            else -> Muted
+                        },
+                        fontSize = 6.sp, letterSpacing = .6.sp
+                    )
+                    Text(
+                        "${entry.category} · ${entry.language.uppercase()}",
+                        color = Muted, fontSize = 5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        if (isPinned) "Unpin" else "Pin source",
+                        color = Color(0xFFBCA9C9), fontSize = 7.sp,
+                        modifier = Modifier.clickable {
+                            pinned = if (isPinned) pinned - entry.id else pinned + entry.id
+                        }.padding(top = 3.dp)
+                    )
                 }
             }
         }
