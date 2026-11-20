@@ -225,7 +225,7 @@ private fun NoirApp() {
                     { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
                     { showAbout = true }, { tab = it })
                 tab == "Home" -> HomeScreen(catalogue, loading, error, openSeries, { tab = it })
-                else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, { selected = it }, { tab = it })
+                else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, openSeries, { tab = it })
             }
             if (showAbout) AlertDialog(
                 onDismissRequest = { showAbout = false },
