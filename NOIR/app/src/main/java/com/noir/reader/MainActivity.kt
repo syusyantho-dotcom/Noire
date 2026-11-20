@@ -1135,6 +1135,22 @@ private fun SourcesScreen(
 }
 
 @Composable
+private fun FilterChipLabel(label: String, onClick: () -> Unit) {
+    Row(
+        Modifier.clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF211D28))
+            .border(1.dp, Color(0xFF403746), RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 9.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = Color(0xFFE0D5E7), fontSize = 7.sp, letterSpacing = .45.sp, maxLines = 1)
+        Spacer(Modifier.width(3.dp))
+        Icon(Icons.Rounded.ExpandMore, null, tint = Muted, modifier = Modifier.size(12.dp))
+    }
+}
+
+@Composable
 private fun SourceBrowseScreen(
     source: MangaSource,
     enabled: Boolean,
@@ -1149,19 +1165,34 @@ private fun SourceBrowseScreen(
     var page by remember(source.id) { mutableIntStateOf(0) }
     var hasMore by remember(source.id) { mutableStateOf(false) }
     var loadingMore by remember(source.id) { mutableStateOf(false) }
+    var filterOptions by remember(source.id) { mutableStateOf(SourceFilterOptions()) }
+    var selectedSort by remember(source.id) { mutableStateOf("POPULARITY") }
+    var selectedState by remember(source.id) { mutableStateOf<String?>(null) }
+    var selectedTagKey by remember(source.id) { mutableStateOf<String?>(null) }
+    var sortMenu by remember { mutableStateOf(false) }
+    var stateMenu by remember { mutableStateOf(false) }
+    var tagMenu by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(source.id, query) {
+    LaunchedEffect(source.id) {
+        runCatching { source.filterOptions() }
+            .onSuccess { options ->
+                filterOptions = options
+                if (selectedSort !in options.sortOrders && options.sortOrders.isNotEmpty()) selectedSort = options.sortOrders.first()
+            }
+    }
+
+    LaunchedEffect(source.id, query, selectedSort, selectedState, selectedTagKey) {
         delay(if (query.isBlank()) 80 else 400)
         loading = true
         error = null
         page = 0
         catalogue = emptyList()
         try {
-            val result = if (query.isBlank()) source.popular(0) else source.search(query, 0)
+            val result = source.browse(query, 0, selectedSort, selectedState, selectedTagKey)
             catalogue = result.distinctBy { it.id }
             hasMore = result.isNotEmpty()
-            if (result.isEmpty()) error = "This source returned no titles. Try again later."
+            if (result.isEmpty()) error = "No titles match these catalogue filters."
         } catch (e: Exception) {
             error = e.message ?: "Could not load this source."
         } finally {
@@ -1218,7 +1249,36 @@ private fun SourceBrowseScreen(
                     cursorColor = White, focusedContainerColor = Panel, unfocusedContainerColor = Panel
                 )
             )
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box {
+                    FilterChipLabel("SORT  ·  ${selectedSort.replace('_', ' ')}") { sortMenu = true }
+                    DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }, containerColor = Panel) {
+                        filterOptions.sortOrders.forEach { option ->
+                            DropdownMenuItem(text = { Text(option.replace('_', ' '), color = if (selectedSort == option) Color(0xFFD6C5F2) else White) }, onClick = { selectedSort = option; sortMenu = false })
+                        }
+                    }
+                }
+                Box {
+                    FilterChipLabel("STATUS  ·  ${selectedState?.replace('_', ' ') ?: "ANY"}") { stateMenu = true }
+                    DropdownMenu(expanded = stateMenu, onDismissRequest = { stateMenu = false }, containerColor = Panel) {
+                        DropdownMenuItem(text = { Text("Any status", color = White) }, onClick = { selectedState = null; stateMenu = false })
+                        filterOptions.states.forEach { option ->
+                            DropdownMenuItem(text = { Text(option.replace('_', ' '), color = if (selectedState == option) Color(0xFFD6C5F2) else White) }, onClick = { selectedState = option; stateMenu = false })
+                        }
+                    }
+                }
+                Box {
+                    FilterChipLabel("GENRE  ·  ${filterOptions.tags.firstOrNull { it.key == selectedTagKey }?.title ?: "ANY"}") { tagMenu = true }
+                    DropdownMenu(expanded = tagMenu, onDismissRequest = { tagMenu = false }, containerColor = Panel, modifier = Modifier.heightIn(max = 360.dp)) {
+                        DropdownMenuItem(text = { Text("Any genre", color = White) }, onClick = { selectedTagKey = null; tagMenu = false })
+                        filterOptions.tags.forEach { option ->
+                            DropdownMenuItem(text = { Text(option.title, color = if (selectedTagKey == option.key) Color(0xFFD6C5F2) else White) }, onClick = { selectedTagKey = option.key; tagMenu = false })
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(if (query.isBlank()) "LATEST CATALOGUE" else "SEARCH RESULTS", color = White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
                 Spacer(Modifier.weight(1f))
@@ -1253,7 +1313,7 @@ private fun SourceBrowseScreen(
                                 loadingMore = true
                                 try {
                                     val nextPage = page + 1
-                                    val next = if (query.isBlank()) source.popular(nextPage) else source.search(query, nextPage)
+                                    val next = source.browse(query, nextPage, selectedSort, selectedState, selectedTagKey)
                                     catalogue = (catalogue + next).distinctBy { it.id }
                                     page = nextPage
                                     hasMore = next.isNotEmpty()
