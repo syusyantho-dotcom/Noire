@@ -88,19 +88,25 @@ private fun SourceIcon(source: MangaSource, modifier: Modifier = Modifier) {
         }
     }
 
-    Box(modifier, contentAlignment = Alignment.Center) {
-        Text(
-            source.name.take(1).uppercase(),
-            color = Color(0xFFF0E5F4),
-            fontSize = 29.sp,
-            fontWeight = FontWeight.Light
-        )
+    Box(
+        modifier.clip(RoundedCornerShape(13.dp))
+            .background(Brush.linearGradient(listOf(Color(0xFF302A39), Color(0xFF17151C)))),
+        contentAlignment = Alignment.Center
+    ) {
         if (!iconUrl.isNullOrBlank()) {
             AsyncImage(
                 model = iconUrl,
                 contentDescription = source.name + " icon",
-                modifier = Modifier.fillMaxSize().padding(10.dp),
+                modifier = Modifier.fillMaxSize().padding(8.dp).clip(RoundedCornerShape(8.dp)),
                 contentScale = ContentScale.Fit
+            )
+        } else {
+            Text(
+                source.name.take(2).uppercase(),
+                color = Color(0xFFE6DDF0),
+                fontSize = 15.sp,
+                letterSpacing = 1.sp,
+                fontWeight = FontWeight.SemiBold
             )
         }
     }
@@ -660,13 +666,18 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                             Column(Modifier.width(132.dp).clickable { onOpen(series) }) {
                                 Box(Modifier.fillMaxWidth().height(178.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF201D26))) {
                                     SeriesCover(series, Modifier.fillMaxSize())
-                                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x44000000), Color(0xAA000000)))))
-                                    Text(series.sourceName.uppercase(), color = Color(0xFFE4DDEC), fontSize = 7.sp, letterSpacing = 1.sp, modifier = Modifier.align(Alignment.BottomStart).padding(10.dp))
+                                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x22000000)))))
                                 }
                                 Spacer(Modifier.height(9.dp))
                                 Text(series.title, color = White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, lineHeight = 14.sp, overflow = TextOverflow.Ellipsis)
-                                Spacer(Modifier.height(3.dp))
-                                Text("DISCOVER MORE", color = Muted, fontSize = 7.sp, letterSpacing = 1.sp)
+                                Spacer(Modifier.height(5.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    SourceRegistry.byId(series.sourceId)?.let { source ->
+                                        SourceIcon(source, Modifier.size(15.dp))
+                                        Spacer(Modifier.width(5.dp))
+                                    }
+                                    Text(series.sourceName, color = Muted, fontSize = 7.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
                             }
                         }
                     }
@@ -730,21 +741,7 @@ private fun HomeSeriesShelf(
 
 @Composable
 private fun SeriesCover(series: Series, modifier: Modifier = Modifier) {
-    Box(modifier) {
-        Cover(series.coverUrl, Modifier.fillMaxSize())
-        val source = SourceRegistry.byId(series.sourceId)
-        if (source != null) {
-            Box(
-                Modifier.align(Alignment.TopEnd).padding(7.dp).size(34.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xCC111016))
-                    .border(1.dp, Color(0x66D8CBE8), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                SourceIcon(source, Modifier.fillMaxSize().padding(2.dp))
-            }
-        }
-    }
+    Cover(series.coverUrl, modifier)
 }
 
 @Composable
@@ -752,15 +749,18 @@ private fun CoverTile(series: Series, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().animateContentSize(tween(220)).clickable(onClick = onClick)) {
         Box(Modifier.fillMaxWidth().aspectRatio(0.70f).clip(RoundedCornerShape(17.dp)).background(Color(0xFF1C1A21))) {
             SeriesCover(series, Modifier.fillMaxSize())
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x22000000), Color(0x99000000)))))
-            Box(Modifier.align(Alignment.TopEnd).padding(8.dp).clip(RoundedCornerShape(20.dp)).background(Color(0x9909080D)).padding(horizontal = 8.dp, vertical = 5.dp)) {
-                Text(series.sourceName.uppercase(), color = Color(0xFFE0D9E9), fontSize = 7.sp, letterSpacing = 1.sp)
-            }
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x18000000)))))
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(9.dp))
         Text(series.title, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, lineHeight = 15.sp, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(3.dp))
-        Text("MANGA  /  MANHWA", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SourceRegistry.byId(series.sourceId)?.let { source ->
+                SourceIcon(source, Modifier.size(17.dp))
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(series.sourceName, color = Color(0xFFB8B0C2), fontSize = 8.sp, letterSpacing = .6.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
@@ -1441,10 +1441,7 @@ private fun SourcesScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF30283A)), contentAlignment = Alignment.Center) {
-                            SourceIcon(entry, Modifier.fillMaxSize().padding(2.dp))
-                        }
+                        SourceIcon(entry, Modifier.size(44.dp))
                         Spacer(Modifier.width(9.dp))
                         Column(Modifier.weight(1f)) {
                             Text(entry.name, color = White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
