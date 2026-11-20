@@ -38,6 +38,13 @@ data class ChapterPages(
     val pages: List<String>
 )
 
+data class SourceTagOption(val title: String, val key: String)
+data class SourceFilterOptions(
+    val sortOrders: List<String> = listOf("POPULARITY"),
+    val states: List<String> = emptyList(),
+    val tags: List<SourceTagOption> = emptyList()
+)
+
 interface MangaSource {
     val id: String
     val name: String
@@ -49,6 +56,10 @@ interface MangaSource {
     suspend fun search(query: String, page: Int = 0): List<Series>
     suspend fun chapters(series: Series): List<Chapter>
     suspend fun pages(chapter: Chapter): ChapterPages
+    suspend fun filterOptions(): SourceFilterOptions = SourceFilterOptions()
+    suspend fun browse(
+        query: String, page: Int, sort: String, state: String?, tagKey: String?
+    ): List<Series> = if (query.isBlank()) popular(page) else search(query, page)
 }
 
 class MangaDexSource : MangaSource {
