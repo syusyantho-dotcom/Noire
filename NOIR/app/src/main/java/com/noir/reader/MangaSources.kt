@@ -15,14 +15,22 @@ data class Series(
     val description: String,
     val coverUrl: String?,
     val sourceId: String,
-    val sourceName: String
+    val sourceName: String,
+    val sourceUrl: String? = null,
+    val sourcePublicUrl: String? = null
 )
 
 data class Chapter(
     val id: String,
     val name: String,
     val number: String,
-    val language: String
+    val language: String,
+    val sourceUrl: String? = null,
+    val sourceTitle: String? = null,
+    val sourceBranch: String? = null,
+    val sourceUploadDate: Long = 0L,
+    val sourceVolume: Int = 0,
+    val sourceScanlator: String? = null
 )
 
 data class ChapterPages(
@@ -34,6 +42,9 @@ interface MangaSource {
     val id: String
     val name: String
     val description: String
+    val language: String get() = ""
+    val category: String get() = "Manga"
+    val isBroken: Boolean get() = false
     suspend fun popular(page: Int = 0): List<Series>
     suspend fun search(query: String, page: Int = 0): List<Series>
     suspend fun chapters(series: Series): List<Chapter>
@@ -44,6 +55,8 @@ class MangaDexSource : MangaSource {
     override val id = "mangadex"
     override val name = "MangaDex"
     override val description = "Community catalogue with safe-rated titles"
+    override val language = "EN / ID"
+    override val category = "Manga"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -157,7 +170,25 @@ class MangaDexSource : MangaSource {
 }
 
 object SourceRegistry {
-    // New sources implement MangaSource and register here; UI and reader remain source-agnostic.
-    val sources: List<MangaSource> = listOf(MangaDexSource())
-    fun byId(id: String): MangaSource? = sources.firstOrNull { it.id == id }
+    @Volatile private var registered: List<MangaSource> = listOf(MangaDexSource())
+    @Volatile private var initialized = false
+
+    val sources: List<MangaSource> get() = registered
+
+    @Synchronized
+    fun initialize(context: android.content.Context) {
+        if (initialized) return
+        val parserSources = runCatching {
+            KotatsuParserSources.create(context.applicationContext)
+        }.onFailure {
+            android.util.Log.e("NOIR", "Kotatsu parser registry could not be initialized", it)
+        }.getOrDefault(emptyList())
+        // Keep NOIR's MangaDex adapter (with its own language and chapter handling) and avoid
+        // registering Kotatsu's duplicate MangaDex entry.
+        registered = (listOf(MangaDexSource()) + parserSources)
+            .distinctBy { it.id }
+        initialized = true
+    }
+
+    fun byId(id: String): MangaSource? = registered.firstOrNull { it.id == id }
 }
