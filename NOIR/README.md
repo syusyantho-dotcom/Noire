@@ -4,6 +4,7 @@ NOIR is an Android manga/manhwa reader built with Kotlin and Jetpack Compose. It
 
 ## Implemented
 - Live MangaDex catalogue discovery and title search for safe-rated entries.
+- Paginated catalogue browsing and search, loading additional MangaDex result pages on demand.
 - Manga details, synopsis, chapter list and chapter page loading.
 - Chapter feed pagination, including English and Indonesian translations.
 - Vertical page reader with saved reading position per chapter.
