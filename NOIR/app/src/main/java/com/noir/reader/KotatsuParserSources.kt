@@ -34,6 +34,7 @@ import org.koitharu.kotatsu.parsers.model.ContentRating
 import org.koitharu.kotatsu.parsers.model.Manga
 import org.koitharu.kotatsu.parsers.model.MangaChapter
 import org.koitharu.kotatsu.parsers.model.MangaListFilter
+import org.koitharu.kotatsu.parsers.model.MangaState
 import org.koitharu.kotatsu.parsers.model.MangaSource as KotatsuSourceContract
 import org.koitharu.kotatsu.parsers.model.ParserMangaSource
 import org.koitharu.kotatsu.parsers.model.SortOrder
@@ -76,18 +77,40 @@ private class KotatsuMangaSource(
 
     override suspend fun search(query: String, page: Int): List<Series> = load(query, page)
 
-    private suspend fun load(query: String?, page: Int): List<Series> = withContext(Dispatchers.IO) {
+    override suspend fun filterOptions(): SourceFilterOptions = withContext(Dispatchers.IO) {
+        val parser = host.newParserInstance(parserSource)
+        val options = parser.getFilterOptions()
+        SourceFilterOptions(
+            sortOrders = parser.availableSortOrders.map { it.name }.sorted(),
+            states = options.availableStates.map { it.name }.sorted(),
+            tags = options.availableTags.map { SourceTagOption(it.title, it.key) }.sortedBy { it.title }
+        )
+    }
+
+    override suspend fun browse(
+        query: String, page: Int, sort: String, state: String?, tagKey: String?
+    ): List<Series> = load(query.takeIf { it.isNotBlank() }, page, sort, state, tagKey)
+
+    private suspend fun load(
+        query: String?, page: Int, sortName: String? = null, stateName: String? = null, tagKey: String? = null
+    ): List<Series> = withContext(Dispatchers.IO) {
         val parser = host.newParserInstance(parserSource)
         val order = parser.availableSortOrders.firstOrNull { it == SortOrder.POPULARITY }
             ?: parser.availableSortOrders.firstOrNull()
             ?: SortOrder.UPDATED
+        val filterOptions = if (sortName != null || stateName != null || tagKey != null) parser.getFilterOptions() else null
+        val selectedState = stateName?.let { requested -> MangaState.values().firstOrNull { it.name == requested } }
+        val selectedTag = tagKey?.let { key -> filterOptions?.availableTags?.firstOrNull { it.key == key } }
         val filter = MangaListFilter(
             query = query?.takeIf { it.isNotBlank() },
-            contentRating = setOf(ContentRating.SAFE, ContentRating.SUGGESTIVE)
+            contentRating = setOf(ContentRating.SAFE, ContentRating.SUGGESTIVE),
+            states = selectedState?.let { setOf(it) } ?: emptySet(),
+            tags = selectedTag?.let { setOf(it) } ?: emptySet()
         )
+        val selectedOrder = sortName?.let { requested -> parser.availableSortOrders.firstOrNull { it.name == requested } } ?: order
         parser.getList(
             offset = (page.coerceAtLeast(0) * PAGE_SIZE),
-            order = order,
+            order = selectedOrder,
             filter = filter
         ).asSequence()
             .filterNot { it.contentRating == ContentRating.ADULT }
