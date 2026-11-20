@@ -370,7 +370,7 @@ private fun NoirApp() {
             if (showAbout) AlertDialog(
                 onDismissRequest = { showAbout = false },
                 title = { Text("About NOIR", color = White) },
-                text = { Text("NOIR 1.1.0 includes the Kotatsu community parser library under GPL-3.0. NO WARRANTY. You may copy and modify this app under that license. Full license and corresponding source: github.com/syusyantho-dotcom/Noire (NOIR/LICENSE and THIRD_PARTY_NOTICES.md).", color = Muted) },
+                text = { Text("NOIR 1.3.0 includes the Kotatsu community parser library under GPL-3.0. NO WARRANTY. You may copy and modify this app under that license. Full license and corresponding source: github.com/syusyantho-dotcom/Noire (NOIR/LICENSE and THIRD_PARTY_NOTICES.md).", color = Muted) },
                 confirmButton = { TextButton(onClick = { showAbout = false }) { Text("CLOSE", color = Silver) } },
                 containerColor = Panel
             )
@@ -592,7 +592,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, onIntroSoun
                 Text("NOIR READER", color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text("Your personal reading space", color = Muted, fontSize = 10.sp)
             }
-            Text("1.0.0", color = Silver, fontSize = 9.sp)
+            Text("1.3.0", color = Silver, fontSize = 9.sp)
         }
         Spacer(Modifier.height(26.dp))
         Text("APP SETTINGS", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
