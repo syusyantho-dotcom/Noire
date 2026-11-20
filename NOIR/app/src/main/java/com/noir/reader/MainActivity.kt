@@ -1687,14 +1687,8 @@ private fun BottomNav(tab: String, onTab: (String) -> Unit) {
         val itemWidth = maxWidth / destinations.size
         val itemWidthPx = with(androidx.compose.ui.platform.LocalDensity.current) { itemWidth.toPx() }
         Box(
-            Modifier.fillMaxWidth().height(64.dp)
-                .clip(RoundedCornerShape(32.dp))
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color(0xE83A3542), Color(0xE81C1A22), Color(0xF00D0C11))
-                    )
-                )
-                .border(1.dp, Color(0x77E2D7EA), RoundedCornerShape(32.dp))
+            Modifier.fillMaxWidth().height(68.dp)
+                // Transparent track: only the moving glass lens remains visible.
                 .pointerInput(itemWidthPx, selectedIndex) {
                     var lastDragValue = sliderPosition.value
                     detectHorizontalDragGestures(
@@ -1728,29 +1722,32 @@ private fun BottomNav(tab: String, onTab: (String) -> Unit) {
             // The lens glides between destinations and stretches subtly with finger movement.
             Box(
                 Modifier
-                    .width(itemWidth - 5.dp)
+                    .width(itemWidth - 8.dp)
                     .fillMaxHeight()
-                    .padding(vertical = 4.dp)
+                    .padding(vertical = 5.dp)
                     .graphicsLayer {
-                        translationX = itemWidth.toPx() * sliderPosition.value + 2.5.dp.toPx()
+                        translationX = itemWidth.toPx() * sliderPosition.value + 4.dp.toPx()
+                        shadowElevation = 15.dp.toPx()
+                        shape = RoundedCornerShape(25.dp)
+                        clip = false
                     }
-                    .clip(RoundedCornerShape(27.dp))
+                    .clip(RoundedCornerShape(25.dp))
                     .background(
                         Brush.verticalGradient(
-                            listOf(Color(0xC5B5A7C5), Color(0x815F536D), Color(0x99544B60))
+                            listOf(Color(0xB5D8D0E2), Color(0x735F536D), Color(0x8C302A3B))
                         )
                     )
-                    .border(1.dp, Color(0xBDF5EAFB), RoundedCornerShape(27.dp))
+                    .border(1.dp, Color(0xC9F4ECFA), RoundedCornerShape(25.dp))
             ) {
                 Box(
                     Modifier.fillMaxWidth().height(1.dp)
-                        .background(Color.White.copy(alpha = .58f))
+                        .background(Color.White.copy(alpha = .72f))
                 )
                 Box(
                     Modifier.align(Alignment.TopCenter).fillMaxWidth().height(17.dp)
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color(0x36FFFFFF), Color.Transparent)
+                                listOf(Color(0x55FFFFFF), Color(0x08FFFFFF), Color.Transparent)
                             )
                         )
                 )
@@ -1758,7 +1755,7 @@ private fun BottomNav(tab: String, onTab: (String) -> Unit) {
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(13.dp)
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color.Transparent, Color(0x454D3E5C))
+                                listOf(Color.Transparent, Color(0x554D3E5C))
                             )
                         )
                 )
