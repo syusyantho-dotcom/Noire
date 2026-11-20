@@ -495,14 +495,14 @@ private fun NoirApp() {
                         val key = "${series.sourceId}:${series.id}"
                         if (category == "Reading") libraryCategories.remove(key) else libraryCategories[key] = category
                     },
-                    onOpen = openSeries, onTab = { tab = it }
+                    onOpen = openSeries, onTab = { navigateTab(it) }
                 )
                 tab == "Profile" -> ProfileScreen(introSound, launchIntro, matureContentEnabled,
                     { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
                     { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
                     { matureContentEnabled = it; prefs.edit().putBoolean("mature_content_18_plus", it).apply() },
-                    { showAbout = true }, { tab = it })
-                tab == "Home" -> HomeScreen(catalogue, loading, error, openSeries, { tab = it })
+                    { showAbout = true }, { navigateTab(it) })
+                tab == "Home" -> HomeScreen(catalogue, loading, error, openSeries, { navigateTab(it) })
                 else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, matureContentEnabled, { tab = it })
             }
             }
