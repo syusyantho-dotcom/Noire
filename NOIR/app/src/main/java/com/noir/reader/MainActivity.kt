@@ -498,7 +498,8 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                     Column(Modifier.weight(1f)) {
                         Text("THE ART OF GETTING LOST", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 2.4.sp)
                         Spacer(Modifier.height(7.dp))
-                        Text("Your next\nworld awaits.", color = White, fontSize = 34.sp, lineHeight = 37.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Your next
+world awaits.", color = White, fontSize = 34.sp, lineHeight = 37.sp, fontWeight = FontWeight.SemiBold)
                     }
                     NoirLogoMark(48.dp)
                 }
@@ -1172,7 +1173,8 @@ private fun SourcesScreen(
                         Text("${enabledCount.toString().padStart(2, '0')} ENABLED", color = Color(0xFFB9D3B1), fontSize = 8.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold)
                     }
                     Spacer(Modifier.height(17.dp))
-                    Text("Read beyond\nthe boundaries.", color = White, fontSize = 25.sp, lineHeight = 29.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Read beyond
+the boundaries.", color = White, fontSize = 25.sp, lineHeight = 29.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(7.dp))
                     Text(
                         "Browse ${entries.size} community source parsers. Enable only the catalogues you want NOIR to search.",
@@ -1371,7 +1373,11 @@ private fun SourceBrowseScreen(
             val result = source.browse(query, 0, selectedSort, selectedState, selectedTagKey)
             catalogue = result.distinctBy { it.id }
             hasMore = result.isNotEmpty()
-            if (result.isEmpty()) error = if (source.category.equals("HENTAI", ignoreCase = true)) {\n                "This source is marked Hentai; NOIR only displays safe-rated catalogue entries."\n            } else {\n                "No titles match these catalogue filters."\n            }
+            if (result.isEmpty()) error = if (source.category.equals("HENTAI", ignoreCase = true)) {
+                "This source is marked Hentai; NOIR only displays safe-rated catalogue entries."
+            } else {
+                "No titles match these catalogue filters."
+            }
         } catch (e: Exception) {
             error = e.message ?: "Could not load this source."
         } finally {
