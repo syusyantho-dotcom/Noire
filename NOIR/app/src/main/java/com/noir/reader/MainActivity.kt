@@ -105,6 +105,8 @@ private fun NoirApp() {
     var tab by remember { mutableStateOf("Home") }
     var introSound by remember { mutableStateOf(prefs.getBoolean("intro_sound", true)) }
     var launchIntro by remember { mutableStateOf(prefs.getBoolean("launch_intro", true)) }
+    var matureContentEnabled by remember { mutableStateOf(prefs.getBoolean("mature_content_18_plus", false)) }
+    SideEffect { MatureContentAccess.enabled = matureContentEnabled }
     var showAbout by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Series?>(null) }
@@ -394,9 +396,10 @@ private fun NoirApp() {
                     },
                     onOpen = openSeries, onTab = { tab = it }
                 )
-                tab == "Profile" -> ProfileScreen(introSound, launchIntro,
+                tab == "Profile" -> ProfileScreen(introSound, launchIntro, matureContentEnabled,
                     { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
                     { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
+                    { matureContentEnabled = it; prefs.edit().putBoolean("mature_content_18_plus", it).apply() },
                     { showAbout = true }, { tab = it })
                 tab == "Home" -> HomeScreen(catalogue, loading, error, openSeries, { tab = it })
                 else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, { tab = it })
@@ -614,7 +617,8 @@ private fun HomeFeatureRow(series: Series, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onAbout: () -> Unit, onTab: (String) -> Unit) {
+private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onTab: (String) -> Unit) {
+    var showMatureConfirmation by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(24.dp))
         Text("NOIR / PERSONAL SPACE", color = Muted, fontSize = 10.sp, letterSpacing = 2.sp)
@@ -633,6 +637,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, onIntroSoun
         Spacer(Modifier.height(10.dp))
         SettingSwitch("Intro sound", "Play the short chime when NOIR opens", introSound, onIntroSound)
         SettingSwitch("Launch animation", "Show the NOIR intro on app launch", launchIntro, onLaunchIntro)
+        SettingSwitch("Mature catalogues (18+)", "Show adult-rated titles from sources that provide them", matureContentEnabled, { enabled -> if (enabled) showMatureConfirmation = true else onMatureContent(false) })
         Spacer(Modifier.height(22.dp))
         Text("INFORMATION", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
@@ -651,6 +656,14 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, onIntroSoun
         Spacer(Modifier.weight(1f))
         BottomNav("Profile", onTab)
     }
+    if (showMatureConfirmation) AlertDialog(
+        onDismissRequest = { showMatureConfirmation = false },
+        title = { Text("Adults only (18+)", color = White) },
+        text = { Text("Mature catalogues may contain sexually explicit material. Enable them only if you are 18 or older and it is legal for you to access this content. You can turn this off at any time.", color = Muted) },
+        confirmButton = { TextButton(onClick = { onMatureContent(true); showMatureConfirmation = false }) { Text("I AM 18+", color = Silver) } },
+        dismissButton = { TextButton(onClick = { showMatureConfirmation = false }) { Text("CANCEL", color = Muted) } },
+        containerColor = Panel
+    )
 }
 
 @Composable
@@ -1336,7 +1349,8 @@ private fun SourceBrowseScreen(
     enabled: Boolean,
     onToggleEnabled: () -> Unit,
     onBack: () -> Unit,
-    onOpen: (Series) -> Unit
+    onOpen: (Series) -> Unit,
+    matureContentEnabled: Boolean
 ) {
     var query by remember(source.id) { mutableStateOf("") }
     var catalogue by remember(source.id) { mutableStateOf<List<Series>>(emptyList()) }
@@ -1362,7 +1376,7 @@ private fun SourceBrowseScreen(
             }
     }
 
-    LaunchedEffect(source.id, query, selectedSort, selectedState, selectedTagKey) {
+    LaunchedEffect(source.id, query, selectedSort, selectedState, selectedTagKey, matureContentEnabled) {
         delay(if (query.isBlank()) 80 else 400)
         loading = true
         error = null
@@ -1372,11 +1386,7 @@ private fun SourceBrowseScreen(
             val result = source.browse(query, 0, selectedSort, selectedState, selectedTagKey)
             catalogue = result.distinctBy { it.id }
             hasMore = result.isNotEmpty()
-            if (result.isEmpty()) error = if (source.category.equals("HENTAI", ignoreCase = true)) {
-                "This source is marked Hentai; NOIR only displays safe-rated catalogue entries."
-            } else {
-                "No titles match these catalogue filters."
-            }
+            if (result.isEmpty()) error = "No titles match these catalogue filters."
         } catch (e: Exception) {
             error = e.message ?: "Could not load this source."
         } finally {
