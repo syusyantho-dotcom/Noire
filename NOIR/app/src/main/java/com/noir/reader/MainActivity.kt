@@ -16,6 +16,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -37,12 +38,15 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.consume
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.delay
@@ -835,53 +839,94 @@ private fun BottomNav(tab: String, onTab: (String) -> Unit) {
         "Profile" to Icons.Rounded.Person
     )
     val selectedIndex = destinations.indexOfFirst { it.first == tab }.coerceAtLeast(0)
-    val animatedIndex by animateFloatAsState(
-        targetValue = selectedIndex.toFloat(),
-        animationSpec = spring(dampingRatio = 0.72f, stiffness = 360f),
-        label = "noir-liquid-nav-slide"
-    )
+    val scope = rememberCoroutineScope()
+    val sliderPosition = remember { Animatable(selectedIndex.toFloat()) }
+
+    LaunchedEffect(selectedIndex) {
+        sliderPosition.animateTo(
+            selectedIndex.toFloat(),
+            animationSpec = spring(dampingRatio = 0.72f, stiffness = 330f)
+        )
+    }
 
     BoxWithConstraints(
         Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 7.dp, bottom = 12.dp)
     ) {
         val itemWidth = maxWidth / destinations.size
+        val itemWidthPx = with(androidx.compose.ui.platform.LocalDensity.current) { itemWidth.toPx() }
         Box(
-            Modifier.fillMaxWidth().height(62.dp)
-                .clip(RoundedCornerShape(30.dp))
+            Modifier.fillMaxWidth().height(64.dp)
+                .clip(RoundedCornerShape(32.dp))
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color(0xD936333E), Color(0xE817161D), Color(0xE80D0C11))
+                        listOf(Color(0xE83A3542), Color(0xE81C1A22), Color(0xF00D0C11))
                     )
                 )
-                .border(1.dp, Color(0x66CFC4D8), RoundedCornerShape(30.dp))
+                .border(1.dp, Color(0x77E2D7EA), RoundedCornerShape(32.dp))
+                .pointerInput(itemWidthPx, selectedIndex) {
+                    var lastDragValue = sliderPosition.value
+                    detectHorizontalDragGestures(
+                        onDragStart = { lastDragValue = sliderPosition.value },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            lastDragValue = (lastDragValue + dragAmount / itemWidthPx).coerceIn(0f, 3f)
+                            scope.launch { sliderPosition.snapTo(lastDragValue) }
+                        },
+                        onDragEnd = {
+                            val destination = sliderPosition.value.roundToInt().coerceIn(0, 3)
+                            onTab(destinations[destination].first)
+                            scope.launch {
+                                sliderPosition.animateTo(
+                                    destination.toFloat(),
+                                    spring(dampingRatio = 0.68f, stiffness = 380f)
+                                )
+                            }
+                        },
+                        onDragCancel = {
+                            scope.launch {
+                                sliderPosition.animateTo(
+                                    selectedIndex.toFloat(),
+                                    spring(dampingRatio = 0.72f, stiffness = 330f)
+                                )
+                            }
+                        }
+                    )
+                }
         ) {
-            // A moving, layered glass lens. The spring makes the selected surface glide
-            // between destinations instead of recolouring four independent buttons.
+            // The lens glides between destinations and stretches subtly with finger movement.
             Box(
                 Modifier
                     .width(itemWidth - 5.dp)
                     .fillMaxHeight()
                     .padding(vertical = 4.dp)
                     .graphicsLayer {
-                        translationX = itemWidth.toPx() * animatedIndex + 2.5.dp.toPx()
+                        translationX = itemWidth.toPx() * sliderPosition.value + 2.5.dp.toPx()
                     }
-                    .clip(RoundedCornerShape(25.dp))
+                    .clip(RoundedCornerShape(27.dp))
                     .background(
                         Brush.verticalGradient(
-                            listOf(Color(0xA8A99AB8), Color(0x705C526B), Color(0x80504A5A))
+                            listOf(Color(0xC5B5A7C5), Color(0x815F536D), Color(0x99544B60))
                         )
                     )
-                    .border(1.dp, Color(0x8CF1E8FA), RoundedCornerShape(25.dp))
+                    .border(1.dp, Color(0xBDF5EAFB), RoundedCornerShape(27.dp))
             ) {
                 Box(
                     Modifier.fillMaxWidth().height(1.dp)
-                        .background(Color.White.copy(alpha = .42f))
+                        .background(Color.White.copy(alpha = .58f))
                 )
                 Box(
-                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(12.dp)
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth().height(17.dp)
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color.Transparent, Color(0x334D3E5C))
+                                listOf(Color(0x36FFFFFF), Color.Transparent)
+                            )
+                        )
+                )
+                Box(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(13.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color(0x454D3E5C))
                             )
                         )
                 )
@@ -889,19 +934,20 @@ private fun BottomNav(tab: String, onTab: (String) -> Unit) {
             Row(Modifier.fillMaxSize().padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 destinations.forEachIndexed { index, (label, icon) ->
                     val active = selectedIndex == index
+                    val distance = kotlin.math.abs(sliderPosition.value - index)
                     val iconScale by animateFloatAsState(
-                        targetValue = if (active) 1.12f else 1f,
-                        animationSpec = spring(dampingRatio = 0.58f, stiffness = 430f),
+                        targetValue = if (active) 1.13f else 1f,
+                        animationSpec = spring(dampingRatio = 0.56f, stiffness = 430f),
                         label = "noir-nav-icon-$label"
                     )
                     val tint by animateColorAsState(
-                        targetValue = if (active) Color(0xFFFFF9FF) else Color(0xFFAAA5B1),
-                        animationSpec = tween(220),
+                        targetValue = if (distance < 0.45f) Color(0xFFFFFAFF) else Color(0xFFAAA5B1),
+                        animationSpec = tween(170),
                         label = "noir-nav-tint-$label"
                     )
                     Column(
                         Modifier.weight(1f).fillMaxHeight()
-                            .clip(RoundedCornerShape(24.dp))
+                            .clip(RoundedCornerShape(26.dp))
                             .clickable { onTab(label) }
                             .padding(vertical = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
