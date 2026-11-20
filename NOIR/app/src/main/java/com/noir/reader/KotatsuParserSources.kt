@@ -51,6 +51,10 @@ import kotlin.coroutines.resume
  *
  * NOIR keeps its own UI, library and reader. The parser library supplies website adapters only.
  */
+internal object MatureContentAccess {
+    @Volatile var enabled: Boolean = false
+}
+
 internal object KotatsuParserSources {
     @OptIn(DirectParsersAccess::class)
     fun create(context: Context): List<MangaSource> {
@@ -106,7 +110,11 @@ private class KotatsuMangaSource(
             query = query?.takeIf { it.isNotBlank() },
             // Keep the parser filter to one rating: several community parsers reject multi-rating filters.
             // NOIR intentionally does not expose adult-rated catalogue entries.
-            contentRating = setOf(ContentRating.SAFE),
+            contentRating = if (MatureContentAccess.enabled) {
+                setOf(ContentRating.SAFE, ContentRating.SUGGESTIVE, ContentRating.ADULT)
+            } else {
+                setOf(ContentRating.SAFE)
+            },
             states = selectedState?.let { setOf(it) } ?: emptySet(),
             tags = selectedTag?.let { setOf(it) } ?: emptySet()
         )
@@ -116,7 +124,7 @@ private class KotatsuMangaSource(
             order = selectedOrder,
             filter = filter
         ).asSequence()
-            .filterNot { it.contentRating == ContentRating.ADULT }
+            .filter { MatureContentAccess.enabled || it.contentRating != ContentRating.ADULT }
             .map { manga ->
                 Series(
                     id = manga.id.toString(),
