@@ -65,6 +65,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = android.graphics.Color.rgb(7, 7, 8)
         window.navigationBarColor = android.graphics.Color.rgb(7, 7, 8)
+        SourceRegistry.initialize(applicationContext)
         setContent { NoirApp() }
     }
 }
@@ -73,6 +74,30 @@ class MainActivity : ComponentActivity() {
 private fun NoirApp() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("noir_preferences", Context.MODE_PRIVATE) }
+    val sourcePrefs = remember { context.getSharedPreferences("noir_sources", Context.MODE_PRIVATE) }
+    val enabledSourceIds = remember {
+        mutableStateListOf<String>().apply {
+            val raw = sourcePrefs.getString("enabled_sources", null)
+            if (raw == null) {
+                add("mangadex")
+            } else {
+                runCatching {
+                    val stored = JSONArray(raw)
+                    for (index in 0 until stored.length()) {
+                        val id = stored.optString(index)
+                        if (id.isNotBlank()) add(id)
+                    }
+                }
+            }
+        }
+    }
+    val activeSourceIds = enabledSourceIds.toList()
+    val activeSources = SourceRegistry.sources.filter { it.id in activeSourceIds }
+    LaunchedEffect(activeSourceIds) {
+        val stored = JSONArray()
+        activeSourceIds.forEach { stored.put(it) }
+        sourcePrefs.edit().putString("enabled_sources", stored.toString()).apply()
+    }
     var tab by remember { mutableStateOf("Home") }
     var introSound by remember { mutableStateOf(prefs.getBoolean("intro_sound", true)) }
     var launchIntro by remember { mutableStateOf(prefs.getBoolean("launch_intro", true)) }
@@ -100,7 +125,9 @@ private fun NoirApp() {
                             description = item.optString("description"),
                             coverUrl = item.optString("coverUrl").takeIf { it.isNotBlank() },
                             sourceId = item.optString("sourceId"),
-                            sourceName = item.optString("sourceName")
+                            sourceName = item.optString("sourceName"),
+                            sourceUrl = item.optString("sourceUrl").takeIf { it.isNotBlank() },
+                            sourcePublicUrl = item.optString("sourcePublicUrl").takeIf { it.isNotBlank() }
                         )
                     )
                 }
@@ -118,6 +145,8 @@ private fun NoirApp() {
                     .put("coverUrl", item.coverUrl ?: "")
                     .put("sourceId", item.sourceId)
                     .put("sourceName", item.sourceName)
+                    .put("sourceUrl", item.sourceUrl ?: "")
+                    .put("sourcePublicUrl", item.sourcePublicUrl ?: "")
             )
         }
         prefs.edit().putString("saved_series", stored.toString()).apply()
@@ -128,8 +157,16 @@ private fun NoirApp() {
                 val stored = JSONArray(prefs.getString("recent_series", "[]"))
                 for (index in 0 until stored.length()) {
                     val item = stored.optJSONObject(index) ?: continue
-                    add(Series(item.optString("id"), item.optString("title"), item.optString("description"),
-                        item.optString("coverUrl").takeIf { it.isNotBlank() }, item.optString("sourceId"), item.optString("sourceName")))
+                    add(Series(
+                        item.optString("id"),
+                        item.optString("title"),
+                        item.optString("description"),
+                        item.optString("coverUrl").takeIf { it.isNotBlank() },
+                        item.optString("sourceId"),
+                        item.optString("sourceName"),
+                        item.optString("sourceUrl").takeIf { it.isNotBlank() },
+                        item.optString("sourcePublicUrl").takeIf { it.isNotBlank() }
+                    ))
                 }
             }
         }
@@ -138,7 +175,8 @@ private fun NoirApp() {
         val stored = JSONArray()
         recentlyRead.take(30).forEach { item ->
             stored.put(JSONObject().put("id", item.id).put("title", item.title).put("description", item.description)
-                .put("coverUrl", item.coverUrl ?: "").put("sourceId", item.sourceId).put("sourceName", item.sourceName))
+                .put("coverUrl", item.coverUrl ?: "").put("sourceId", item.sourceId).put("sourceName", item.sourceName)
+                .put("sourceUrl", item.sourceUrl ?: "").put("sourcePublicUrl", item.sourcePublicUrl ?: ""))
         }
         prefs.edit().putString("recent_series", stored.toString()).apply()
     }
@@ -164,7 +202,7 @@ private fun NoirApp() {
     var showIntro by remember { mutableStateOf(launchIntro) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(query, tab) {
+    LaunchedEffect(query, tab, activeSourceIds) {
         if (selected == null && selectedChapter == null && (tab == "Discover" || tab == "Home")) {
             hasMoreCatalogue = false
             loadingMoreCatalogue = false
@@ -177,7 +215,7 @@ private fun NoirApp() {
                 hasMoreCatalogue = false
                 val combined = mutableListOf<Series>()
                 val failures = mutableListOf<String>()
-                for (provider in SourceRegistry.sources) {
+                for (provider in activeSources) {
                     try {
                         combined.addAll(if (query.isBlank()) provider.popular(0) else provider.search(query, 0))
                     } catch (providerError: Exception) {
@@ -185,8 +223,9 @@ private fun NoirApp() {
                     }
                 }
                 catalogue = combined.distinctBy { "${it.sourceId}:${it.id}" }
-                hasMoreCatalogue = combined.size >= 24
+                hasMoreCatalogue = combined.isNotEmpty()
                 if (catalogue.isEmpty() && failures.isNotEmpty()) error = failures.first()
+                if (activeSources.isEmpty()) error = "Enable at least one source in the Source library."
             } catch (e: Exception) {
                 error = e.message ?: "Could not load catalogue. Check your connection."
             } finally { loading = false }
@@ -199,7 +238,7 @@ private fun NoirApp() {
                 val nextPage = cataloguePage + 1
                 val combined = mutableListOf<Series>()
                 val failures = mutableListOf<String>()
-                for (provider in SourceRegistry.sources) {
+                for (provider in activeSources) {
                     try {
                         combined.addAll(if (query.isBlank()) provider.popular(nextPage) else provider.search(query, nextPage))
                     } catch (providerError: Exception) {
@@ -209,7 +248,7 @@ private fun NoirApp() {
                 val merged = (catalogue + combined).distinctBy { "${it.sourceId}:${it.id}" }
                 catalogue = merged
                 cataloguePage = nextPage
-                hasMoreCatalogue = combined.size >= 24
+                hasMoreCatalogue = combined.isNotEmpty()
                 if (combined.isEmpty() && failures.isNotEmpty()) error = failures.first()
                 loadingMoreCatalogue = false
             }
@@ -252,7 +291,14 @@ private fun NoirApp() {
                     },
                     onChapter = { selectedChapter = it }
                 )
-                tab == "Sources" -> SourcesScreen { tab = it }
+                tab == "Sources" -> SourcesScreen(
+                    enabledSourceIds = activeSourceIds.toSet(),
+                    onToggleEnabled = { sourceId ->
+                        if (sourceId in enabledSourceIds) enabledSourceIds.remove(sourceId)
+                        else enabledSourceIds.add(sourceId)
+                    },
+                    onTab = { tab = it }
+                )
                 tab == "Library" -> LibraryScreen(saved.toList(), recentlyRead.toList(), openSeries, { tab = it })
                 tab == "Profile" -> ProfileScreen(introSound, launchIntro,
                     { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
