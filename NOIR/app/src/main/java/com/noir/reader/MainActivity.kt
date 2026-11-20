@@ -141,6 +141,14 @@ private data class NoirNavigationState(
     val selectedChapter: Chapter?
 )
 
+private data class ReadingHistoryEntry(
+    val chapterId: String,
+    val chapterName: String,
+    val pageNumber: Int,
+    val pageCount: Int,
+    val updatedAt: Long
+)
+
 @Composable
 private fun NoirApp() {
     val context = LocalContext.current
@@ -176,12 +184,13 @@ private fun NoirApp() {
     SideEffect { MatureContentAccess.enabled = matureContentEnabled }
     var showAbout by remember { mutableStateOf(false) }
     var showWhatsNew by remember { mutableStateOf(false) }
-    val whatsNewVersion = "1.4.0"
+    val whatsNewVersion = "1.4.1"
     val shouldShowWhatsNew = remember { prefs.getString("seen_whats_new", "") != whatsNewVersion }
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Series?>(null) }
     var selectedSource by remember { mutableStateOf<MangaSource?>(null) }
     var selectedChapter by remember { mutableStateOf<Chapter?>(null) }
+    var pendingResumeKey by remember { mutableStateOf<String?>(null) }
     val navigationStack = remember { mutableStateListOf<NoirNavigationState>() }
     val currentNavigationState = { NoirNavigationState(tab, selected, selectedSource, selectedChapter) }
     fun goBack() {
@@ -339,6 +348,36 @@ private fun NoirApp() {
         seriesProgress.forEach { (key, value) -> stored.put(key, value.toDouble()) }
         prefs.edit().putString("series_reading_progress", stored.toString()).apply()
     }
+    val readingHistory = remember {
+        mutableStateMapOf<String, ReadingHistoryEntry>().apply {
+            runCatching {
+                val stored = JSONObject(prefs.getString("reading_history", "{}"))
+                stored.keys().forEach { key ->
+                    val item = stored.optJSONObject(key) ?: return@forEach
+                    val chapterId = item.optString("chapterId")
+                    if (chapterId.isNotBlank()) put(key, ReadingHistoryEntry(
+                        chapterId = chapterId,
+                        chapterName = item.optString("chapterName", "Chapter"),
+                        pageNumber = item.optInt("pageNumber", 1).coerceAtLeast(1),
+                        pageCount = item.optInt("pageCount", 1).coerceAtLeast(1),
+                        updatedAt = item.optLong("updatedAt", 0L)
+                    ))
+                }
+            }
+        }
+    }
+    LaunchedEffect(readingHistory.toMap()) {
+        val stored = JSONObject()
+        readingHistory.forEach { (key, entry) ->
+            stored.put(key, JSONObject()
+                .put("chapterId", entry.chapterId)
+                .put("chapterName", entry.chapterName)
+                .put("pageNumber", entry.pageNumber)
+                .put("pageCount", entry.pageCount)
+                .put("updatedAt", entry.updatedAt))
+        }
+        prefs.edit().putString("reading_history", stored.toString()).apply()
+    }
     val openSeries: (Series) -> Unit = { item ->
         navigationStack.add(currentNavigationState())
         selectedSource = null
@@ -456,6 +495,15 @@ private fun NoirApp() {
         catch (e: Exception) { error = e.message ?: "Could not load chapters." }
         finally { loading = false }
     }
+    LaunchedEffect(pendingResumeKey, selected?.id, selected?.sourceId, chapters) {
+        val item = selected ?: return@LaunchedEffect
+        val key = "${item.sourceId}:${item.id}"
+        if (pendingResumeKey != key || chapters.isEmpty()) return@LaunchedEffect
+        val savedChapterId = readingHistory[key]?.chapterId
+        val chapterToResume = chapters.firstOrNull { it.id == savedChapterId }
+        if (chapterToResume != null) selectedChapter = chapterToResume
+        pendingResumeKey = null
+    }
     LaunchedEffect(selectedChapter?.id) {
         val chapter = selectedChapter ?: return@LaunchedEffect
         pages = emptyList()
@@ -511,11 +559,19 @@ private fun NoirApp() {
                     readerMode = readerMode,
                     onModeChange = { mode -> readerMode = mode; prefs.edit().putString("reader_mode", mode).apply() },
                     onProgress = { page ->
-                        readingProgress[selectedChapter!!.id] = page
+                        val activeChapter = selectedChapter
+                        if (activeChapter != null) readingProgress[activeChapter.id] = page
                         selected?.let { series ->
-                            if (pages.isNotEmpty()) {
+                            if (pages.isNotEmpty() && activeChapter != null) {
                                 val key = "${series.sourceId}:${series.id}"
                                 seriesProgress[key] = ((page + 1).toFloat() / pages.size).coerceIn(0f, 1f)
+                                readingHistory[key] = ReadingHistoryEntry(
+                                    chapterId = activeChapter.id,
+                                    chapterName = activeChapter.name,
+                                    pageNumber = (page + 1).coerceAtMost(pages.size),
+                                    pageCount = pages.size,
+                                    updatedAt = System.currentTimeMillis()
+                                )
                             }
                         }
                     },
@@ -582,12 +638,17 @@ private fun NoirApp() {
                     onTab = { navigateTab(it) }
                 )
                 tab == "Library" -> LibraryScreen(
-                    saved.toList(), recentlyRead.toList(), libraryCategories.toMap(), seriesProgress.toMap(),
+                    saved.toList(), recentlyRead.toList(), libraryCategories.toMap(), seriesProgress.toMap(), readingHistory.toMap(),
                     onCategoryChange = { series, category ->
                         val key = "${series.sourceId}:${series.id}"
                         if (category == "Reading") libraryCategories.remove(key) else libraryCategories[key] = category
                     },
-                    onOpen = openSeries, onTab = { navigateTab(it) }
+                    onOpen = openSeries,
+                    onResume = { item ->
+                        pendingResumeKey = "${item.sourceId}:${item.id}"
+                        openSeries(item)
+                    },
+                    onTab = { navigateTab(it) }
                 )
                 tab == "Profile" -> ProfileScreen(introSound, launchIntro, matureContentEnabled,
                     { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
@@ -1129,8 +1190,8 @@ private fun WhatsNewDialog(onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(15.dp)) {
                 WhatsNewItem("SMART READER", "Predictive chapter loading prepares the next chapter in the background, while nearby pages are warmed in the image cache.", "01")
-                WhatsNewItem("READING PROGRESS", "Your Home shelves and Library covers now show a live chapter progress bar and percentage.", "02")
-                WhatsNewItem("YOUR PROGRESS, SAVED", "Reading progress is stored on this device and restored when you return to your library.", "03")
+                WhatsNewItem("CONTINUE READING", "Your Library now remembers the exact chapter and page, with one-tap resume.", "02")
+                WhatsNewItem("YOUR PROGRESS, SAVED", "Reading history and page position stay on this device, ready when you return.", "03")
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(Color(0xFF211D28)).padding(12.dp)) {
                     Text("Made for the moments when one more chapter turns into five.", color = Color(0xFFD2C4E2), fontSize = 10.sp, lineHeight = 15.sp)
                 }
@@ -2062,8 +2123,10 @@ private fun LibraryScreen(
     recent: List<Series>,
     categories: Map<String, String>,
     progressBySeries: Map<String, Float>,
+    readingHistory: Map<String, ReadingHistoryEntry>,
     onCategoryChange: (Series, String) -> Unit,
     onOpen: (Series) -> Unit,
+    onResume: (Series) -> Unit,
     onTab: (String) -> Unit
 ) {
     val categoryOptions = listOf("All", "Reading", "Plan to read", "Completed", "On hold", "Dropped")
@@ -2102,7 +2165,9 @@ private fun LibraryScreen(
                 if (selectedCategory == "All" && recent.isNotEmpty()) {
                     item { Text("PICK UP WHERE YOU LEFT OFF", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold) }
                     items(recent.take(8), key = { "recent-${it.sourceId}-${it.id}" }) { series ->
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF17151C)).clickable { onOpen(series) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val history = readingHistory["${series.sourceId}:${series.id}"]
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF17151C))
+                            .clickable { if (history != null) onResume(series) else onOpen(series) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(54.dp, 68.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF28232F))) {
                                 SeriesCover(series, Modifier.fillMaxSize())
                                 CoverProgressOverlay(progressBySeries["${series.sourceId}:${series.id}"] ?: 0f, Modifier.align(Alignment.BottomCenter))
@@ -2112,8 +2177,17 @@ private fun LibraryScreen(
                                 Text(series.title, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 Spacer(Modifier.height(4.dp))
                                 Text(series.sourceName.uppercase(), color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
-                                Spacer(Modifier.height(7.dp))
-                                Text("OPEN SERIES  ↗", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.sp)
+                                Spacer(Modifier.height(5.dp))
+                                if (history != null) {
+                                    Text(history.chapterName, color = Color(0xFFE1D5EE), fontSize = 9.sp, fontWeight = FontWeight.Medium,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("PAGE ${history.pageNumber} / ${history.pageCount}", color = Muted, fontSize = 8.sp, letterSpacing = .7.sp)
+                                    Spacer(Modifier.height(5.dp))
+                                    Text("CONTINUE READING  ↗", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = .8.sp, fontWeight = FontWeight.Bold)
+                                } else {
+                                    Spacer(Modifier.height(7.dp))
+                                    Text("OPEN SERIES  ↗", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.sp)
+                                }
                             }
                             Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
                         }
