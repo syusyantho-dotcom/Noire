@@ -816,21 +816,56 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(25.dp)
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 15.dp, bottom = 30.dp),
+            verticalArrangement = Arrangement.spacedBy(23.dp)
         ) {
             item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("THE ART OF GETTING LOST", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 2.4.sp)
-                        Spacer(Modifier.height(7.dp))
-                        Text("Your next\nworld awaits.", color = White, fontSize = 34.sp, lineHeight = 37.sp, fontWeight = FontWeight.SemiBold)
+                Column(verticalArrangement = Arrangement.spacedBy(19.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            NoirLogoMark(34.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("NOIR", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.2.sp)
+                                Text("YOUR READING UNIVERSE", color = Muted, fontSize = 7.sp, letterSpacing = 1.35.sp)
+                            }
+                        }
+                        Box(
+                            Modifier.size(40.dp).clip(CircleShape)
+                                .background(Brush.linearGradient(listOf(Color(0xFF302A38), Color(0xFF17151B))))
+                                .border(1.dp, Color(0xFF49414F), CircleShape)
+                                .clickable { onTab("Profile") },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.Person, contentDescription = "Profile", tint = Color(0xFFE8E0EE), modifier = Modifier.size(19.dp))
+                        }
                     }
-                    NoirLogoMark(48.dp)
+                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("A QUIETER KIND OF ESCAPE", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 2.1.sp)
+                        Text("Find your\nnext world.", color = White, fontSize = 34.sp, lineHeight = 37.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.7).sp)
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp))
+                            .background(Color(0xFF151419))
+                            .border(1.dp, Color(0xFF302C35), RoundedCornerShape(17.dp))
+                            .clickable { onTab("Discover") }
+                            .padding(horizontal = 14.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Search, contentDescription = null, tint = Color(0xFFB8A9C5), modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text("Search stories, worlds, characters", color = Color(0xFF85818B), fontSize = 10.sp, modifier = Modifier.weight(1f))
+                        Icon(Icons.Rounded.ArrowForward, contentDescription = null, tint = Color(0xFF77717E), modifier = Modifier.size(15.dp))
+                    }
                 }
             }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("SELECTED FOR YOU", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 1.8.sp)
+                        Spacer(Modifier.weight(1f))
+                        Text("01 — 05", color = Color(0xFF77717E), fontSize = 8.sp, letterSpacing = 1.sp)
+                    }
                     HorizontalPager(
                         state = heroPagerState,
                         modifier = Modifier.fillMaxWidth(),
@@ -839,7 +874,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                     ) { page ->
                         val story = featuredStories.getOrNull(page)
                         Box(
-                            Modifier.fillMaxWidth().height(342.dp)
+                            Modifier.fillMaxWidth().height(326.dp)
                                 .graphicsLayer {
                                     val offset = (heroPagerState.currentPage - page) + heroPagerState.currentPageOffsetFraction
                                     val distance = kotlin.math.abs(offset).coerceIn(0f, 1f)
@@ -2344,13 +2379,16 @@ private fun BottomNav(tab: String, onTab: (String) -> Unit) {
     }
 
     BoxWithConstraints(
-        Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 7.dp, bottom = 12.dp)
+        Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(30.dp))
+            .background(Brush.verticalGradient(listOf(Color(0xE51E1C23), Color(0xF20D0C10))))
+            .border(1.dp, Color(0xFF3B3741), RoundedCornerShape(30.dp))
     ) {
         val itemWidth = maxWidth / destinations.size
         val itemWidthPx = with(androidx.compose.ui.platform.LocalDensity.current) { itemWidth.toPx() }
         Box(
-            Modifier.fillMaxWidth().height(68.dp)
-                // Transparent track: only the moving glass lens remains visible.
+            Modifier.fillMaxWidth().height(70.dp).padding(horizontal = 4.dp, vertical = 4.dp)
+                // Translucent floating dock with a spring-driven active glass lens.
                 .pointerInput(itemWidthPx, selectedIndex) {
                     var lastDragValue = sliderPosition.value
                     detectHorizontalDragGestures(
@@ -2386,7 +2424,7 @@ private fun BottomNav(tab: String, onTab: (String) -> Unit) {
                 Modifier
                     .width(itemWidth - 8.dp)
                     .fillMaxHeight()
-                    .padding(vertical = 5.dp)
+                    .padding(vertical = 3.dp)
                     .graphicsLayer {
                         translationX = itemWidth.toPx() * sliderPosition.value + 4.dp.toPx()
                         shadowElevation = 15.dp.toPx()
