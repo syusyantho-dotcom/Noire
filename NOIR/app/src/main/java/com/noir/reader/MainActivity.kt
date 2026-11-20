@@ -64,6 +64,47 @@ private val White = Color(0xFFF4F4F5)
 private val Muted = Color(0xFF99999F)
 private val Silver = Color(0xFFC6C6CC)
 
+private object SourceIconCache {
+    private val icons = java.util.concurrent.ConcurrentHashMap<String, String>()
+    fun get(sourceId: String): String? = icons[sourceId]
+    fun contains(sourceId: String): Boolean = icons.containsKey(sourceId)
+    fun put(sourceId: String, url: String) { icons[sourceId] = url }
+}
+
+@Composable
+private fun SourceIcon(source: MangaSource, modifier: Modifier = Modifier) {
+    var iconUrl by remember(source.id) {
+        mutableStateOf(SourceIconCache.get(source.id)?.takeIf { it.isNotBlank() })
+    }
+    var resolved by remember(source.id) { mutableStateOf(SourceIconCache.contains(source.id)) }
+
+    LaunchedEffect(source.id) {
+        if (!resolved) {
+            val found = runCatching { source.iconUrl() }.getOrNull()
+            SourceIconCache.put(source.id, found.orEmpty())
+            iconUrl = found
+            resolved = true
+        }
+    }
+
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Text(
+            source.name.take(1).uppercase(),
+            color = Color(0xFFF0E5F4),
+            fontSize = 29.sp,
+            fontWeight = FontWeight.Light
+        )
+        if (!iconUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = iconUrl,
+                contentDescription = source.name + " icon",
+                modifier = Modifier.fillMaxSize().padding(10.dp),
+                contentScale = ContentScale.Fit
+            )
+        }
+    }
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -1271,11 +1312,7 @@ private fun SourcesScreen(
                             .border(1.dp, if (active) Color(0xFF8C769A) else Color(0xFF3C3740), RoundedCornerShape(19.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            entry.name.take(1).uppercase(),
-                            color = if (active) Color(0xFFF0E5F4) else Color(0xFF9A8F9F),
-                            fontSize = 29.sp, fontWeight = FontWeight.Light
-                        )
+                        SourceIcon(entry, Modifier.fillMaxSize().padding(2.dp))
                         if (active) {
                             Box(Modifier.align(Alignment.BottomEnd).padding(5.dp).size(8.dp).clip(CircleShape).background(Color(0xFF9DC49A)))
                         } else {
