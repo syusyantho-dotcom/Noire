@@ -1541,6 +1541,11 @@ private fun ReaderScreen(
         animationSpec = tween(3000, easing = FastOutSlowInEasing),
         label = "noir-cinema-progress"
     )
+    val cinemaAlpha by animateFloatAsState(
+        targetValue = if (showChapterCinema) 1f else 0f,
+        animationSpec = tween(520, easing = FastOutSlowInEasing),
+        label = "noir-cinema-alpha"
+    )
     LaunchedEffect(chapter.id, pages.size, loading) {
         if (pages.isNotEmpty() && !loading && initialPage <= 0) {
             showChapterCinema = true
@@ -1692,13 +1697,8 @@ private fun ReaderScreen(
                     Icon(Icons.Rounded.ChevronRight, "Show reader controls", tint = Color(0xFFE9E4EF), modifier = Modifier.size(18.dp))
                 }
             }
-            AnimatedVisibility(
-                visible = showChapterCinema && pages.isNotEmpty(),
-                modifier = Modifier.fillMaxSize(),
-                enter = fadeIn(tween(520)),
-                exit = fadeOut(tween(420))
-            ) {
-                Box(Modifier.fillMaxSize().background(Color(0xFF08070A))) {
+            if (showChapterCinema && pages.isNotEmpty()) {
+                Box(Modifier.fillMaxSize().graphicsLayer { alpha = cinemaAlpha }.background(Color(0xFF08070A))) {
                     series?.let { item ->
                         SeriesCover(item, Modifier.fillMaxSize().graphicsLayer {
                             alpha = 0.28f
