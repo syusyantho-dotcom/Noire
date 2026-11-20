@@ -338,7 +338,8 @@ private fun NoirApp() {
                         if (id in enabledSourceIds) enabledSourceIds.remove(id) else enabledSourceIds.add(id)
                     },
                     onBack = { selectedSource = null },
-                    onOpen = { item -> selectedSource = null; openSeries(item) }
+                    onOpen = { item -> selectedSource = null; openSeries(item) },
+                    matureContentEnabled = matureContentEnabled
                 )
                 selected != null -> DetailScreen(
                     selected!!, chapters, saved.any { it.id == selected!!.id && it.sourceId == selected!!.sourceId },
@@ -444,7 +445,7 @@ private fun CatalogueScreen(
                     Text("Curated from your active sources", color = Muted, fontSize = 9.sp)
                 }
                 Spacer(Modifier.weight(1f))
-                Text("SAFE-RATED", color = Color(0xFFB9B0D1), fontSize = 8.sp, letterSpacing = 1.2.sp)
+                Text(if (matureContentEnabled) "ALL RATINGS" else "SAFE-RATED", color = Color(0xFFB9B0D1), fontSize = 8.sp, letterSpacing = 1.2.sp)
             }
             Spacer(Modifier.height(13.dp))
             when {
