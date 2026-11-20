@@ -319,6 +319,19 @@ private fun NoirApp() {
         readingProgress.forEach { (key, value) -> stored.put(key, value) }
         prefs.edit().putString("reading_progress", stored.toString()).apply()
     }
+    val seriesProgress = remember {
+        mutableStateMapOf<String, Float>().apply {
+            runCatching {
+                val stored = JSONObject(prefs.getString("series_reading_progress", "{}"))
+                stored.keys().forEach { key -> put(key, stored.optDouble(key, 0.0).toFloat().coerceIn(0f, 1f)) }
+            }
+        }
+    }
+    LaunchedEffect(seriesProgress.toMap()) {
+        val stored = JSONObject()
+        seriesProgress.forEach { (key, value) -> stored.put(key, value.toDouble()) }
+        prefs.edit().putString("series_reading_progress", stored.toString()).apply()
+    }
     val openSeries: (Series) -> Unit = { item ->
         navigationStack.add(currentNavigationState())
         selectedSource = null
@@ -469,7 +482,15 @@ private fun NoirApp() {
                     nextChapterReady = isNextChapterPreloaded,
                     readerMode = readerMode,
                     onModeChange = { mode -> readerMode = mode; prefs.edit().putString("reader_mode", mode).apply() },
-                    onProgress = { page -> readingProgress[selectedChapter!!.id] = page },
+                    onProgress = { page ->
+                        readingProgress[selectedChapter!!.id] = page
+                        selected?.let { series ->
+                            if (pages.isNotEmpty()) {
+                                val key = "${series.sourceId}:${series.id}"
+                                seriesProgress[key] = ((page + 1).toFloat() / pages.size).coerceIn(0f, 1f)
+                            }
+                        }
+                    },
                     onNextChapter = {
                         val chapterIndex = chapters.indexOfFirst { it.id == selectedChapter!!.id }
                         chapters.getOrNull(chapterIndex + 1)?.let { selectedChapter = it }
@@ -533,7 +554,7 @@ private fun NoirApp() {
                     onTab = { navigateTab(it) }
                 )
                 tab == "Library" -> LibraryScreen(
-                    saved.toList(), recentlyRead.toList(), libraryCategories.toMap(),
+                    saved.toList(), recentlyRead.toList(), libraryCategories.toMap(), seriesProgress.toMap(),
                     onCategoryChange = { series, category ->
                         val key = "${series.sourceId}:${series.id}"
                         if (category == "Reading") libraryCategories.remove(key) else libraryCategories[key] = category
@@ -831,6 +852,23 @@ private fun SeriesCover(series: Series, modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun CoverProgressOverlay(progress: Float, modifier: Modifier = Modifier) {
+    if (progress > 0f) {
+        Column(modifier.fillMaxWidth().background(Color(0xC9070709)).padding(horizontal = 7.dp, vertical = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("READING", color = Color(0xFFE9DDF5), fontSize = 7.sp, letterSpacing = .9.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Text("${(progress.coerceIn(0f, 1f) * 100).roundToInt()}%", color = White, fontSize = 7.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(4.dp))
+            Box(Modifier.fillMaxWidth().height(2.dp).clip(RoundedCornerShape(4.dp)).background(Color(0x665D5665))) {
+                Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).fillMaxHeight().background(Color(0xFFD8C5F0)))
+            }
+        }
+    }
+}
+
+@Composable
 private fun CoverTile(series: Series, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().animateContentSize(tween(220))
         .clip(RoundedCornerShape(19.dp)).background(Color(0xFF121116))
@@ -931,9 +969,12 @@ private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, onC
 }
 
 @Composable
-private fun SeriesRow(series: Series, onClick: () -> Unit) {
+private fun SeriesRow(series: Series, progress: Float = 0f, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel).clickable(onClick = onClick).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        SeriesCover(series, Modifier.size(82.dp, 112.dp))
+        Box(Modifier.size(82.dp, 112.dp).clip(RoundedCornerShape(12.dp))) {
+            SeriesCover(series, Modifier.fillMaxSize())
+            CoverProgressOverlay(progress, Modifier.align(Alignment.BottomCenter))
+        }
         Column(Modifier.weight(1f).padding(start = 13.dp, end = 7.dp)) {
             Text(series.title, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(7.dp))
@@ -1789,6 +1830,7 @@ private fun LibraryScreen(
     items: List<Series>,
     recent: List<Series>,
     categories: Map<String, String>,
+    progressBySeries: Map<String, Float>,
     onCategoryChange: (Series, String) -> Unit,
     onOpen: (Series) -> Unit,
     onTab: (String) -> Unit
@@ -1830,7 +1872,10 @@ private fun LibraryScreen(
                     item { Text("PICK UP WHERE YOU LEFT OFF", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold) }
                     items(recent.take(8), key = { "recent-${it.sourceId}-${it.id}" }) { series ->
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF17151C)).clickable { onOpen(series) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(54.dp, 68.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF28232F))) { SeriesCover(series, Modifier.fillMaxSize()) }
+                            Box(Modifier.size(54.dp, 68.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF28232F))) {
+                                SeriesCover(series, Modifier.fillMaxSize())
+                                CoverProgressOverlay(progressBySeries["${series.sourceId}:${series.id}"] ?: 0f, Modifier.align(Alignment.BottomCenter))
+                            }
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(series.title, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -1854,7 +1899,7 @@ private fun LibraryScreen(
                 } else {
                     items(filtered, key = { "saved-${it.sourceId}-${it.id}" }) { series ->
                         Column(Modifier.fillMaxWidth()) {
-                            SeriesRow(series) { onOpen(series) }
+                            SeriesRow(series, progressBySeries["${series.sourceId}:${series.id}"] ?: 0f) { onOpen(series) }
                             var expanded by remember(series.id, series.sourceId) { mutableStateOf(false) }
                             Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(categories["${series.sourceId}:${series.id}"] ?: "Reading", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = .8.sp)
