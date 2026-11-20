@@ -166,10 +166,10 @@ private fun NoirApp() {
 
     LaunchedEffect(query, tab) {
         if (selected == null && selectedChapter == null && (tab == "Discover" || tab == "Home")) {
-            loading = true
             hasMoreCatalogue = false
             loadingMoreCatalogue = false
             delay(if (query.isBlank()) 100 else 450)
+            loading = true
             error = null
             try {
                 catalogue = emptyList()
