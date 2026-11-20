@@ -184,6 +184,22 @@ private fun NoirApp() {
         }
         prefs.edit().putString("recent_series", stored.toString()).apply()
     }
+    val bookmarkedChapterKeys = remember {
+        mutableStateListOf<String>().apply {
+            runCatching {
+                val stored = JSONArray(prefs.getString("bookmarked_chapters", "[]"))
+                for (index in 0 until stored.length()) {
+                    val key = stored.optString(index)
+                    if (key.isNotBlank()) add(key)
+                }
+            }
+        }
+    }
+    LaunchedEffect(bookmarkedChapterKeys.toList()) {
+        val stored = JSONArray()
+        bookmarkedChapterKeys.forEach { stored.put(it) }
+        prefs.edit().putString("bookmarked_chapters", stored.toString()).apply()
+    }
     val readingProgress = remember {
         mutableStateMapOf<String, Int>().apply {
             runCatching {
@@ -301,11 +317,16 @@ private fun NoirApp() {
                     onOpen = { item -> selectedSource = null; openSeries(item) }
                 )
                 selected != null -> DetailScreen(
-                    selected!!, chapters, saved.any { it.id == selected!!.id && it.sourceId == selected!!.sourceId }, loading, error,
+                    selected!!, chapters, saved.any { it.id == selected!!.id && it.sourceId == selected!!.sourceId },
+                    bookmarkedChapterKeys.toSet(), loading, error,
                     onBack = { selected = null },
                     onSave = {
                         val item = selected!!
                         if (saved.any { it.id == item.id && it.sourceId == item.sourceId }) saved.removeAll { it.id == item.id && it.sourceId == item.sourceId } else saved.add(item)
+                    },
+                    onToggleChapterBookmark = { chapter ->
+                        val key = "${selected!!.sourceId}:${chapter.id}"
+                        if (key in bookmarkedChapterKeys) bookmarkedChapterKeys.remove(key) else bookmarkedChapterKeys.add(key)
                     },
                     onChapter = { selectedChapter = it }
                 )
@@ -614,8 +635,10 @@ private fun Cover(url: String?, modifier: Modifier = Modifier) {
 
 @Composable
 private fun DetailScreen(
-    series: Series, chapters: List<Chapter>, saved: Boolean, loading: Boolean, error: String?,
-    onBack: () -> Unit, onSave: () -> Unit, onChapter: (Chapter) -> Unit
+    series: Series, chapters: List<Chapter>, saved: Boolean, bookmarkedChapterKeys: Set<String>,
+    loading: Boolean, error: String?,
+    onBack: () -> Unit, onSave: () -> Unit, onToggleChapterBookmark: (Chapter) -> Unit,
+    onChapter: (Chapter) -> Unit
 ) {
     var synopsisExpanded by remember(series.id) { mutableStateOf(false) }
     val synopsis = series.description.ifBlank { "No synopsis is available for this title yet." }
@@ -769,7 +792,16 @@ private fun DetailScreen(
                             letterSpacing = 1.2.sp
                         )
                     }
-                    Icon(Icons.Rounded.PlayArrow, null, tint = Color(0xFFD6C5F2), modifier = Modifier.size(23.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { onToggleChapterBookmark(chapter) }) {
+                            Icon(
+                                if ("${series.sourceId}:${chapter.id}" in bookmarkedChapterKeys) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder,
+                                contentDescription = "Bookmark chapter",
+                                tint = if ("${series.sourceId}:${chapter.id}" in bookmarkedChapterKeys) Color(0xFFD6C5F2) else Muted
+                            )
+                        }
+                        Icon(Icons.Rounded.PlayArrow, null, tint = Color(0xFFD6C5F2), modifier = Modifier.size(23.dp))
+                    }
                 }
             }
 
