@@ -52,6 +52,7 @@ interface MangaSource {
     val language: String get() = ""
     val category: String get() = "Manga"
     val isBroken: Boolean get() = false
+    suspend fun iconUrl(): String? = null
     suspend fun popular(page: Int = 0): List<Series>
     suspend fun search(query: String, page: Int = 0): List<Series>
     suspend fun chapters(series: Series): List<Chapter>
@@ -68,6 +69,7 @@ class MangaDexSource : MangaSource {
     override val description = "Community catalogue with safe-rated titles"
     override val language = "EN / ID"
     override val category = "Manga"
+    override suspend fun iconUrl(): String = "https://mangadex.org/favicon.ico"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
