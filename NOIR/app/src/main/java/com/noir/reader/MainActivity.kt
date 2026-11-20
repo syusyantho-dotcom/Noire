@@ -437,11 +437,15 @@ private fun NoirApp() {
             key(routeKey) {
             when {
                 selectedChapter != null -> ReaderScreen(
-                    selected, selectedChapter!!, pages, loading, error,
+                    selected, selectedChapter!!, chapters, pages, loading, error,
                     readingProgress[selectedChapter!!.id] ?: 0,
                     readerMode = readerMode,
                     onModeChange = { mode -> readerMode = mode; prefs.edit().putString("reader_mode", mode).apply() },
                     onProgress = { page -> readingProgress[selectedChapter!!.id] = page },
+                    onNextChapter = {
+                        val chapterIndex = chapters.indexOfFirst { it.id == selectedChapter!!.id }
+                        chapters.getOrNull(chapterIndex + 1)?.let { selectedChapter = it }
+                    },
                     onBack = { goBack() }
                 )
                 selectedSource != null -> SourceBrowseScreen(
@@ -1149,11 +1153,12 @@ private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, cont
 
 @Composable
 private fun ReaderScreen(
-    series: Series?, chapter: Chapter, pages: List<String>, loading: Boolean, error: String?,
+    series: Series?, chapter: Chapter, chapterList: List<Chapter>, pages: List<String>, loading: Boolean, error: String?,
     initialPage: Int, readerMode: String, onModeChange: (String) -> Unit,
-    onProgress: (Int) -> Unit, onBack: () -> Unit
+    onProgress: (Int) -> Unit, onNextChapter: () -> Unit, onBack: () -> Unit
 ) {
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage.coerceAtLeast(0))
+    val hasNextChapter = chapterList.indexOfFirst { it.id == chapter.id }.let { it >= 0 && it < chapterList.lastIndex }
     val pagerState = androidx.compose.foundation.pager.rememberPagerState(initialPage = initialPage.coerceAtLeast(0), pageCount = { pages.size })
     var showModeMenu by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -1176,6 +1181,32 @@ private fun ReaderScreen(
         }
     }
     val currentPage = if (isPaged) pagerState.currentPage else listState.firstVisibleItemIndex
+
+    // In vertical/webtoon mode, advance only after the reader reaches the actual
+    // bottom during a user-driven scroll. A per-chapter guard prevents duplicate loads.
+    LaunchedEffect(chapter.id, pages.size, isPaged, hasNextChapter) {
+        if (!isPaged && pages.size > 1 && hasNextChapter) {
+            var advanced = false
+            kotlinx.coroutines.flow.snapshotFlow {
+                listState.isScrollInProgress && !listState.canScrollForward &&
+                    listState.layoutInfo.totalItemsCount > 1
+            }.collect { reachedEnd ->
+                if (reachedEnd && !advanced) {
+                    advanced = true
+                    onNextChapter()
+                }
+            }
+        }
+    }
+
+    val baseFlingBehavior = androidx.compose.foundation.gestures.ScrollableDefaults.flingBehavior()
+    val readerFlingBehavior = remember(baseFlingBehavior) {
+        object : androidx.compose.foundation.gestures.FlingBehavior {
+            override suspend fun androidx.compose.foundation.gestures.ScrollScope.performFling(initialVelocity: Float): Float {
+                return with(baseFlingBehavior) { performFling(initialVelocity * 1.18f) }
+            }
+        }
+    }
     val movePage: (Int) -> Unit = { direction ->
         if (pages.isNotEmpty()) readerScope.launch {
             val target = (currentPage + direction).coerceIn(0, pages.lastIndex)
@@ -1197,6 +1228,7 @@ private fun ReaderScreen(
                         contentScale = if (fitToWidth) ContentScale.FillWidth else ContentScale.Fit)
                 }
                 else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
+                    flingBehavior = readerFlingBehavior,
                     verticalArrangement = Arrangement.spacedBy(if (readerMode == "Webtoon") 0.dp else 1.dp),
                     contentPadding = PaddingValues(bottom = 18.dp)) {
                     items(count = pages.size, key = { index -> "reader-page-$index" }, contentType = { "reader-page" }) { index ->
@@ -1223,8 +1255,16 @@ private fun ReaderScreen(
                     IconButton(onClick = { movePage(-1) }, enabled = currentPage > 0) {
                         Icon(if (isPaged) Icons.Rounded.ChevronLeft else Icons.Rounded.KeyboardArrowUp, "Previous page", tint = if (currentPage > 0) White else Muted)
                     }
-                    IconButton(onClick = { movePage(1) }, enabled = pages.isNotEmpty() && currentPage < pages.lastIndex) {
-                        Icon(if (isPaged) Icons.Rounded.ChevronRight else Icons.Rounded.KeyboardArrowDown, "Next page", tint = if (currentPage < pages.lastIndex) White else Muted)
+                    IconButton(
+                        onClick = {
+                            if (currentPage < pages.lastIndex) movePage(1)
+                            else if (hasNextChapter) onNextChapter()
+                        },
+                        enabled = pages.isNotEmpty() && (currentPage < pages.lastIndex || hasNextChapter)
+                    ) {
+                        Icon(if (isPaged) Icons.Rounded.ChevronRight else Icons.Rounded.KeyboardArrowDown,
+                            if (currentPage < pages.lastIndex) "Next page" else "Next chapter",
+                            tint = if (currentPage < pages.lastIndex || hasNextChapter) White else Muted)
                     }
                     Box {
                         IconButton(onClick = { showModeMenu = true }) { Icon(Icons.Rounded.ViewCarousel, "Reading mode", tint = Silver) }
