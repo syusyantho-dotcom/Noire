@@ -83,6 +83,10 @@ private fun NoirApp() {
     var chapters by remember { mutableStateOf<List<Chapter>>(emptyList()) }
     var pages by remember { mutableStateOf<List<String>>(emptyList()) }
     var catalogue by remember { mutableStateOf<List<Series>>(emptyList()) }
+    var cataloguePage by remember { mutableIntStateOf(0) }
+    var hasMoreCatalogue by remember { mutableStateOf(false) }
+    var loadingMoreCatalogue by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val saved = remember {
         mutableStateListOf<Series>().apply {
             runCatching {
@@ -166,22 +170,50 @@ private fun NoirApp() {
             loading = true
             error = null
             try {
+                catalogue = emptyList()
+                cataloguePage = 0
+                hasMoreCatalogue = false
                 val combined = mutableListOf<Series>()
                 val failures = mutableListOf<String>()
                 for (provider in SourceRegistry.sources) {
                     try {
-                        combined.addAll(if (query.isBlank()) provider.popular() else provider.search(query))
+                        combined.addAll(if (query.isBlank()) provider.popular(0) else provider.search(query, 0))
                     } catch (providerError: Exception) {
                         failures.add("${provider.name}: ${providerError.message ?: "unavailable"}")
                     }
                 }
                 catalogue = combined.distinctBy { "${it.sourceId}:${it.id}" }
+                hasMoreCatalogue = combined.size >= 24
                 if (catalogue.isEmpty() && failures.isNotEmpty()) error = failures.first()
             } catch (e: Exception) {
                 error = e.message ?: "Could not load catalogue. Check your connection."
             } finally { loading = false }
         }
     }
+    val loadMoreCatalogue: () -> Unit = {
+        if (!loading && !loadingMoreCatalogue && hasMoreCatalogue) {
+            scope.launch {
+                loadingMoreCatalogue = true
+                val nextPage = cataloguePage + 1
+                val combined = mutableListOf<Series>()
+                val failures = mutableListOf<String>()
+                for (provider in SourceRegistry.sources) {
+                    try {
+                        combined.addAll(if (query.isBlank()) provider.popular(nextPage) else provider.search(query, nextPage))
+                    } catch (providerError: Exception) {
+                        failures.add("${provider.name}: ${providerError.message ?: "unavailable"}")
+                    }
+                }
+                val merged = (catalogue + combined).distinctBy { "${it.sourceId}:${it.id}" }
+                catalogue = merged
+                cataloguePage = nextPage
+                hasMoreCatalogue = combined.size >= 24
+                if (combined.isEmpty() && failures.isNotEmpty()) error = failures.first()
+                loadingMoreCatalogue = false
+            }
+        }
+    }
+
     LaunchedEffect(selected?.id, selected?.sourceId) {
         val item = selected ?: return@LaunchedEffect
         chapters = emptyList()
@@ -225,7 +257,7 @@ private fun NoirApp() {
                     { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
                     { showAbout = true }, { tab = it })
                 tab == "Home" -> HomeScreen(catalogue, loading, error, openSeries, { tab = it })
-                else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, openSeries, { tab = it })
+                else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, { tab = it })
             }
             if (showAbout) AlertDialog(
                 onDismissRequest = { showAbout = false },
@@ -243,7 +275,8 @@ private fun NoirApp() {
 @Composable
 private fun CatalogueScreen(
     tab: String, query: String, onQuery: (String) -> Unit, catalogue: List<Series>,
-    loading: Boolean, error: String?, onOpen: (Series) -> Unit, onTab: (String) -> Unit
+    loading: Boolean, error: String?, hasMore: Boolean, loadingMore: Boolean, onLoadMore: () -> Unit,
+    onOpen: (Series) -> Unit, onTab: (String) -> Unit
 ) {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp)) {
@@ -279,12 +312,30 @@ private fun CatalogueScreen(
                 catalogue.isEmpty() -> EmptyState("No titles found", "Try another title or check your connection.")
                 else -> LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(17.dp),
                     horizontalArrangement = Arrangement.spacedBy(13.dp),
                     contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
                     items(catalogue, key = { "${it.sourceId}-${it.id}" }) { item -> CoverTile(item) { onOpen(item) } }
+                }
+            }
+            if (hasMore || loadingMore) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 14.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        if (loadingMore) "LOADING MORE…" else "LOAD MORE TITLES  ↓",
+                        color = Color(0xFFE3D9EA),
+                        fontSize = 9.sp,
+                        letterSpacing = 1.3.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clip(RoundedCornerShape(30.dp))
+                            .background(Color(0xFF211D28))
+                            .clickable(enabled = !loadingMore, onClick = onLoadMore)
+                            .padding(horizontal = 20.dp, vertical = 13.dp)
+                    )
                 }
             }
         }
@@ -354,7 +405,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                 catalogue.isEmpty() -> item { EmptyState("The shelves are quiet", "Open Discover to explore the catalogue.") }
                 else -> item {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(end = 4.dp)) {
-                        items(catalogue.take(12), key = { it.id }) { series ->
+                        items(catalogue.take(12), key = { "${it.sourceId}-${it.id}" }) { series ->
                             Column(Modifier.width(132.dp).clickable { onOpen(series) }) {
                                 Box(Modifier.fillMaxWidth().height(178.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF201D26))) {
                                     Cover(series.coverUrl, Modifier.fillMaxSize())
@@ -630,7 +681,7 @@ private fun DetailScreen(
                 item { ErrorState(error) }
             }
             if (!loading && error == null && chapters.isEmpty()) {
-                item { EmptyState("No chapters available", "There are no English chapters listed for this series yet.") }
+                item { EmptyState("No chapters available", "There are no English or Indonesian chapters listed for this series yet.") }
             }
             items(chapters, key = { it.id }) { chapter ->
                 Row(
