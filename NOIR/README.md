@@ -1,20 +1,28 @@
-# NOIR 0.5.0 — Source-driven Android manga reader
+# NOIR 1.0.0 — Premium Android manga reader
 
-NOIR is an Android manga/manhwa reader built with Kotlin and Jetpack Compose.
+NOIR is an Android manga/manhwa reader built with Kotlin and Jetpack Compose. Its visual direction is AMOLED black, silver typography, restrained violet accents, cinematic artwork and spring-driven glass navigation.
 
-## 0.5.0 major foundation
-- Added a modular `MangaSource` provider contract and source registry.
-- Added a live MangaDex provider for safe-rated catalogue discovery and title search.
-- Loads real series metadata and cover artwork.
-- Loads English chapter lists and chapter page manifests.
-- Added a vertical scrolling page reader.
-- Added a source catalogue screen and a library for saved titles.
-- Added Coil image loading and OkHttp networking.
-- Restored the cinematic NOIR intro and guarded intro chime.
-- Kept the existing Android application ID and advanced version to 0.5.0.
+## Implemented
+- Live MangaDex catalogue discovery and title search for safe-rated entries.
+- Manga details, synopsis, chapter list and chapter page loading.
+- Chapter feed pagination, including English and Indonesian translations.
+- Vertical page reader with saved reading position per chapter.
+- Persistent saved library and recently opened titles.
+- Provider-aware title identity so matching IDs from different sources do not collide.
+- Source library with search, Active/Pinned filters and persistent pin preferences.
+- Animated bottom navigation with spring motion and a draggable glass indicator.
+- Cinematic intro animation, optional intro chime and launch-animation settings.
 
-## Source support status
-The provider architecture is designed so more catalogue providers can be added independently. MangaDex is the only active online provider in this first 0.5.0 build; the source screen reports registered providers rather than pretending unsupported sources are available. This build requests safe-rated MangaDex titles only.
+## Online source support
+**MangaDex is currently the only active online provider.** Other names shown in the source library are clearly marked as not installed/planned; they do not currently provide search, chapters or reader pages. The MangaSource interface and SourceRegistry are the extension points for future original provider adapters.
+
+NOIR does not claim unsupported sources as working integrations. Source availability, chapter translations and image delivery depend on MangaDex and the network connection.
+
+## Not yet implemented
+- Additional community provider adapters.
+- Offline chapter downloads and download management.
+- A signed production/release APK and Play Store packaging.
+- Automated UI/instrumentation tests and a full device compatibility test pass.
 
 ## Build
 From this directory:
@@ -23,9 +31,10 @@ From this directory:
 gradle --no-daemon :app:assembleDebug
 ```
 
-The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
+The debug APK is generated at app/build/outputs/apk/debug/app-debug.apk. GitHub Actions builds and uploads the debug APK on relevant pushes.
 
-## Notes
-- An internet connection is required for online catalogue, chapter and page requests.
-- Chapter availability depends on the selected source and its own content/language availability.
-- Actual performance depends on device, Android version, network and image sizes; test on the target phone.
+## Requirements and notes
+- Android 8.0 (API 26) or newer.
+- Internet access for online catalogue, chapter and page requests.
+- Debug builds are for testing; a production release needs a protected release-signing key.
+- Compilation and APK packaging do not replace testing on physical devices.
