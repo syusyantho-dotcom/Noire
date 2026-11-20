@@ -5,7 +5,14 @@ import android.content.Context
 import android.media.AudioManager
 import android.media.MediaPlayer
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.animateColorAsState
@@ -115,6 +122,13 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private data class NoirNavigationState(
+    val tab: String,
+    val selected: Series?,
+    val selectedSource: MangaSource?,
+    val selectedChapter: Chapter?
+)
+
 @Composable
 private fun NoirApp() {
     val context = LocalContext.current
@@ -153,6 +167,31 @@ private fun NoirApp() {
     var selected by remember { mutableStateOf<Series?>(null) }
     var selectedSource by remember { mutableStateOf<MangaSource?>(null) }
     var selectedChapter by remember { mutableStateOf<Chapter?>(null) }
+    val navigationStack = remember { mutableStateListOf<NoirNavigationState>() }
+    val currentNavigationState = { NoirNavigationState(tab, selected, selectedSource, selectedChapter) }
+    fun goBack() {
+        if (navigationStack.isNotEmpty()) {
+            val previous = navigationStack.removeAt(navigationStack.lastIndex)
+            tab = previous.tab
+            selected = previous.selected
+            selectedSource = previous.selectedSource
+            selectedChapter = previous.selectedChapter
+        } else when {
+            selectedChapter != null -> selectedChapter = null
+            selectedSource != null -> selectedSource = null
+            selected != null -> selected = null
+            tab != "Home" -> tab = "Home"
+        }
+    }
+    fun navigateTab(destination: String) {
+        if (destination != tab) {
+            navigationStack.add(currentNavigationState())
+            selected = null
+            selectedSource = null
+            selectedChapter = null
+            tab = destination
+        }
+    }
     var readerMode by remember { mutableStateOf(prefs.getString("reader_mode", "Vertical") ?: "Vertical") }
     var chapters by remember { mutableStateOf<List<Chapter>>(emptyList()) }
     var pages by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -272,6 +311,8 @@ private fun NoirApp() {
         prefs.edit().putString("reading_progress", stored.toString()).apply()
     }
     val openSeries: (Series) -> Unit = { item ->
+        navigationStack.add(currentNavigationState())
+        selectedSource = null
         recentlyRead.removeAll { it.id == item.id && it.sourceId == item.sourceId }
         recentlyRead.add(0, item)
         selected = item
@@ -283,6 +324,21 @@ private fun NoirApp() {
     var downloadProgress by remember { mutableIntStateOf(0) }
     val downloadedChapterKeys = remember {
         mutableStateListOf<String>().apply { addAll(OfflineChapterStore.downloadedKeys(context)) }
+    }
+
+    BackHandler(enabled = showIntro || showAbout || navigationStack.isNotEmpty() || selectedChapter != null || selectedSource != null || selected != null || tab != "Home") {
+        when {
+            showIntro -> showIntro = false
+            showAbout -> showAbout = false
+            else -> goBack()
+        }
+    }
+
+    val routeKey = when {
+        selectedChapter != null -> "reader:" + selected?.sourceId + ":" + selectedChapter?.id
+        selectedSource != null -> "source:" + selectedSource?.id
+        selected != null -> "detail:" + selected?.sourceId + ":" + selected?.id
+        else -> "tab:" + tab
     }
 
     LaunchedEffect(query, tab, activeSourceIds) {
@@ -364,6 +420,14 @@ private fun NoirApp() {
     MaterialTheme(colorScheme = darkColorScheme(background = Black, surface = Panel, primary = Silver, onBackground = White, onSurface = White)) {
         Surface(Modifier.fillMaxSize(), color = Black) {
           Box(Modifier.fillMaxSize()) {
+            AnimatedContent(
+                targetState = routeKey,
+                transitionSpec = {
+                    (fadeIn(tween(230)) + slideInHorizontally(tween(280)) { it / 16 }) togetherWith
+                        (fadeOut(tween(170)) + slideOutHorizontally(tween(210)) { -it / 28 })
+                },
+                label = "noir-screen-transition"
+            ) { _ ->
             when {
                 selectedChapter != null -> ReaderScreen(
                     selected, selectedChapter!!, pages, loading, error,
@@ -371,7 +435,7 @@ private fun NoirApp() {
                     readerMode = readerMode,
                     onModeChange = { mode -> readerMode = mode; prefs.edit().putString("reader_mode", mode).apply() },
                     onProgress = { page -> readingProgress[selectedChapter!!.id] = page },
-                    onBack = { selectedChapter = null }
+                    onBack = { goBack() }
                 )
                 selectedSource != null -> SourceBrowseScreen(
                     source = selectedSource!!,
@@ -380,15 +444,15 @@ private fun NoirApp() {
                         val id = selectedSource!!.id
                         if (id in enabledSourceIds) enabledSourceIds.remove(id) else enabledSourceIds.add(id)
                     },
-                    onBack = { selectedSource = null },
-                    onOpen = { item -> selectedSource = null; openSeries(item) },
+                    onBack = { goBack() },
+                    onOpen = { item -> openSeries(item) },
                     matureContentEnabled = matureContentEnabled
                 )
                 selected != null -> DetailScreen(
                     selected!!, chapters, saved.any { it.id == selected!!.id && it.sourceId == selected!!.sourceId },
                     bookmarkedChapterKeys.toSet(), downloadedChapterKeys.toSet(),
                     downloadingChapterKey, downloadProgress, loading, error,
-                    onBack = { selected = null },
+                    onBack = { goBack() },
                     onSave = {
                         val item = selected!!
                         if (saved.any { it.id == item.id && it.sourceId == item.sourceId }) saved.removeAll { it.id == item.id && it.sourceId == item.sourceId } else saved.add(item)
@@ -397,7 +461,7 @@ private fun NoirApp() {
                         val key = "${selected!!.sourceId}:${chapter.id}"
                         if (key in bookmarkedChapterKeys) bookmarkedChapterKeys.remove(key) else bookmarkedChapterKeys.add(key)
                     },
-                    onChapter = { selectedChapter = it },
+                    onChapter = { chapter -> navigationStack.add(currentNavigationState()); selectedChapter = chapter },
                     onDownloadChapter = { chapter ->
                         val item = selected!!
                         val key = OfflineChapterStore.key(item, chapter)
@@ -426,8 +490,8 @@ private fun NoirApp() {
                         if (sourceId in enabledSourceIds) enabledSourceIds.remove(sourceId)
                         else enabledSourceIds.add(sourceId)
                     },
-                    onOpenSource = { selectedSource = it },
-                    onTab = { tab = it }
+                    onOpenSource = { source -> navigationStack.add(currentNavigationState()); selectedSource = source },
+                    onTab = { navigateTab(it) }
                 )
                 tab == "Library" -> LibraryScreen(
                     saved.toList(), recentlyRead.toList(), libraryCategories.toMap(),
@@ -444,6 +508,7 @@ private fun NoirApp() {
                     { showAbout = true }, { tab = it })
                 tab == "Home" -> HomeScreen(catalogue, loading, error, openSeries, { tab = it })
                 else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, matureContentEnabled, { tab = it })
+            }
             }
             if (showAbout) AlertDialog(
                 onDismissRequest = { showAbout = false },
