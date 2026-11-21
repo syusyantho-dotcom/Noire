@@ -221,6 +221,9 @@ private fun NoirApp() {
             .putString("studio_layout", studioLayout)
             .apply()
     }
+    LaunchedEffect(studioLayout) {
+        discoveryCompactGrid = studioLayout == "Compact"
+    }
     val noirAccent = when (studioAccent) {
         "ice" -> Color(0xFF9BD8F5)
         "crimson" -> Color(0xFFF09AA9)
@@ -476,17 +479,17 @@ private fun NoirApp() {
     val enteringReader = selectedChapter != null
     val routeAlpha by animateFloatAsState(
         if (routeVisible) 1f else 0f,
-        tween(if (enteringReader) 420 else 230, delayMillis = if (enteringReader) 35 else 0, easing = FastOutSlowInEasing),
+        tween(if (!studioMotion) 0 else if (enteringReader) 420 else 230, delayMillis = if (studioMotion && enteringReader) 35 else 0, easing = FastOutSlowInEasing),
         label = "noir-route-fade"
     )
     val routeScale by animateFloatAsState(
-        if (routeVisible) 1f else if (enteringReader) 0.955f else 0.982f,
+        if (routeVisible || !studioMotion) 1f else if (enteringReader) 0.955f else 0.982f,
         spring(dampingRatio = if (enteringReader) 0.82f else 0.88f, stiffness = if (enteringReader) 190f else 280f),
         label = "noir-route-scale"
     )
     val routeOffset by animateFloatAsState(
         if (routeVisible) 0f else if (enteringReader) 38f else 16f,
-        tween(if (enteringReader) 460 else 280, easing = FastOutSlowInEasing),
+        tween(if (!studioMotion) 0 else if (enteringReader) 460 else 280, easing = FastOutSlowInEasing),
         label = "noir-route-slide"
     )
     val routeCorner by animateFloatAsState(
@@ -725,7 +728,11 @@ private fun NoirApp() {
                     accent = studioAccent,
                     onAccent = { studioAccent = it },
                     backdrop = studioBackdrop,
-                    onBackdrop = { studioBackdrop = it },
+                    onBackdrop = {
+                        studioBackdrop = it
+                        context.getSharedPreferences("noir_reader_settings", Context.MODE_PRIVATE)
+                            .edit().putString("reader_background", it).apply()
+                    },
                     fontScale = studioFontScale,
                     onFontScale = { studioFontScale = it },
                     motionEnabled = studioMotion,
@@ -2206,6 +2213,14 @@ private fun ReaderScreen(
     )
     val context = LocalContext.current
     val readerPrefs = remember(context) { context.getSharedPreferences("noir_reader_settings", Context.MODE_PRIVATE) }
+    val readerCanvas = when (readerPrefs.getString("reader_background", "AMOLED")) {
+        "CHARCOAL" -> Color(0xFF24242A)
+        "WARM" -> Color(0xFF29241F)
+        "PAPER" -> Color(0xFFE8E3D9)
+        else -> Color.Black
+    }
+    val readerFontScale = context.getSharedPreferences("noir_preferences", Context.MODE_PRIVATE)
+        .getFloat("studio_font_scale", 1f).coerceIn(.85f, 1.2f)
     var dimAmount by remember { mutableFloatStateOf(readerPrefs.getFloat("screen_dim", 0f).coerceIn(0f, 0.65f)) }
     var fitToWidth by remember { mutableStateOf(readerPrefs.getBoolean("fit_to_width", true)) }
     var pageGap by remember { mutableFloatStateOf(readerPrefs.getFloat("page_gap", 1f).coerceIn(0f, 24f)) }
@@ -2308,7 +2323,7 @@ private fun ReaderScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(readerCanvas).statusBarsPadding()) {
         Box(
             Modifier.weight(1f).fillMaxWidth()
                 .pointerInput(showChapterCinema, showSettings, showModeMenu) {
@@ -2365,7 +2380,7 @@ private fun ReaderScreen(
                 Box(Modifier.align(Alignment.TopEnd).padding(12.dp).graphicsLayer { alpha = readerControlsAlpha }.clip(RoundedCornerShape(30.dp))
                     .background(Color(0xB51A1920)).border(1.dp, Color(0x557F788B), RoundedCornerShape(30.dp))
                     .padding(horizontal = 11.dp, vertical = 7.dp)) {
-                    Text("${(currentPage + 1).coerceAtMost(pages.size)} / ${pages.size}", color = Color(0xFFE8E4EC), fontSize = 9.sp, letterSpacing = .8.sp)
+                    Text("${(currentPage + 1).coerceAtMost(pages.size)} / ${pages.size}", color = if (readerCanvas == Color(0xFFE8E3D9)) Color(0xFF242020) else Color(0xFFE8E4EC), fontSize = (9 * readerFontScale).sp, letterSpacing = .8.sp)
                 }
             }
             if (pages.size > 1 && showReaderControls && !showChapterCinema) {
