@@ -1,6 +1,9 @@
 package com.noir.reader
 
 import android.os.Bundle
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.Context
 import android.media.AudioManager
 import android.media.MediaPlayer
@@ -87,6 +90,12 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import org.json.JSONArray
 import org.json.JSONObject
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 
 private val Black = Color(0xFF070708)
 private val Panel = Color(0xFF17171A)
@@ -147,6 +156,25 @@ class MainActivity : ComponentActivity() {
         window.statusBarColor = android.graphics.Color.rgb(7, 7, 8)
         window.navigationBarColor = android.graphics.Color.rgb(7, 7, 8)
         SourceRegistry.initialize(applicationContext)
+        val radarConstraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val radarWork = PeriodicWorkRequestBuilder<ReleaseRadarWorker>(12, TimeUnit.HOURS)
+            .setConstraints(radarConstraints)
+            .build()
+        WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
+            "noir_release_radar_periodic",
+            ExistingPeriodicWorkPolicy.KEEP,
+            radarWork
+        )
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+            !getSharedPreferences("noir_preferences", Context.MODE_PRIVATE).getBoolean("notification_permission_asked", false)
+        ) {
+            getSharedPreferences("noir_preferences", Context.MODE_PRIVATE).edit()
+                .putBoolean("notification_permission_asked", true).apply()
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1601)
+        }
         setContent { NoirApp() }
     }
 }
@@ -890,9 +918,14 @@ private fun NoirApp() {
                         val days = ((System.currentTimeMillis() - entry.updatedAt).coerceAtLeast(0L) / 86_400_000L).toInt()
                         when (days) { 0 -> "TODAY"; 1 -> "YESTERDAY"; else -> "$days DAYS AGO" }
                     } ?: "NO ACTIVITY YET"
+                    val weeklyActivity = (6 downTo 0).map { offset ->
+                        val start = System.currentTimeMillis() - (offset + 1L) * 86_400_000L
+                        val end = start + 86_400_000L
+                        readingHistory.values.count { it.updatedAt in start until end }
+                    }
                     ProfileScreen(introSound, launchIntro, matureContentEnabled, saved.size,
                         readingHistory.size, averageProgress, latestSeries?.title ?: latestReading?.chapterName.orEmpty(),
-                        activityLabel,
+                        activityLabel, weeklyActivity,
                         onRadar = { navigateTab("Radar") },
                         { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
                         { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
@@ -1984,7 +2017,46 @@ private fun ReleaseRadarScreen(
 }
 
 @Composable
-private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, savedCount: Int, trackedCount: Int, averageProgress: Int, latestTitle: String, activityLabel: String, onRadar: () -> Unit, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit) {
+private fun WeeklyActivityChart(activity: List<Int>) {
+    val labels = listOf("M", "T", "W", "T", "F", "S", "S")
+    val maxValue = (activity.maxOrNull() ?: 0).coerceAtLeast(1)
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF121216)).border(1.dp, Color(0xFF2B2930), RoundedCornerShape(18.dp))
+            .padding(15.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("WEEKLY READING ACTIVITY", color = Silver, fontSize = 8.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
+                Text("${activity.sum()} reading sessions logged", color = Muted, fontSize = 9.sp)
+            }
+            Icon(Icons.Rounded.QueryStats, null, tint = Color(0xFFD6C5F2), modifier = Modifier.size(20.dp))
+        }
+        Row(Modifier.fillMaxWidth().height(72.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+            activity.forEachIndexed { index, value ->
+                val fraction = (value.toFloat() / maxValue).coerceIn(0f, 1f)
+                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.Bottom, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        Modifier.fillMaxWidth().weight(1f),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        Box(
+                            Modifier.fillMaxWidth(0.62f).fillMaxHeight(fraction.coerceAtLeast(if (value > 0) 0.12f else 0f))
+                                .clip(RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp))
+                                .background(if (value > 0) Brush.verticalGradient(listOf(Color(0xFFD6C5F2), Color(0xFF65527D))) else Color(0xFF29262F))
+                        )
+                    }
+                    Spacer(Modifier.height(5.dp))
+                    Text(labels[index], color = Muted, fontSize = 8.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, savedCount: Int, trackedCount: Int, averageProgress: Int, latestTitle: String, activityLabel: String, weeklyActivity: List<Int>, onRadar: () -> Unit, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit) {
     var showMatureConfirmation by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
       Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
@@ -2026,6 +2098,8 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
                 Text(activityLabel, color = Color(0xFFC9B4E0), fontSize = 8.sp, letterSpacing = .8.sp)
             }
         }
+        Spacer(Modifier.height(13.dp))
+        WeeklyActivityChart(weeklyActivity)
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Brush.linearGradient(listOf(Color(0xFF252033), Color(0xFF17151D)))).border(1.dp, Color(0xFF40344F), RoundedCornerShape(15.dp)).clickable(onClick = onRadar).padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.NotificationsActive, null, tint = Color(0xFFD6C5F2))
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
