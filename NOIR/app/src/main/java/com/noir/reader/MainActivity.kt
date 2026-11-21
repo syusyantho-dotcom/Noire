@@ -687,8 +687,18 @@ private fun CatalogueScreen(
     loading: Boolean, error: String?, hasMore: Boolean, loadingMore: Boolean, onLoadMore: () -> Unit,
     onOpen: (Series) -> Unit, matureContentEnabled: Boolean, onTab: (String) -> Unit
 ) {
-    val featured = catalogue.firstOrNull()
-    val remaining = if (catalogue.size > 1) catalogue.drop(1) else emptyList()
+    var compactGrid by remember { mutableStateOf(false) }
+    var sortMode by remember { mutableStateOf("FOR YOU") }
+    val sortedCatalogue = remember(catalogue, sortMode) {
+        when (sortMode) {
+            "A–Z" -> catalogue.sortedBy { it.title.lowercase() }
+            else -> catalogue
+        }
+    }
+    val featured = if (query.isBlank() && sortMode == "FOR YOU") sortedCatalogue.firstOrNull() else null
+    val remaining = if (featured != null) sortedCatalogue.drop(1) else sortedCatalogue
+    val columns = if (compactGrid) 3 else 2
+
     Column(Modifier.fillMaxSize().background(Black).statusBarsPadding()) {
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -725,23 +735,29 @@ private fun CatalogueScreen(
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(if (query.isBlank()) "MADE FOR YOUR NEXT OBSESSION" else "YOUR SEARCH", color = White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.25.sp)
+                        Text(if (query.isBlank()) "MADE FOR YOUR NEXT OBSESSION" else "YOUR SEARCH",
+                            color = White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.25.sp)
+                        Spacer(Modifier.height(3.dp))
                         Text("A universe of stories, gathered in one place", color = Muted, fontSize = 9.sp)
                     }
                     Text("${catalogue.size} TITLES", color = Color(0xFFBDAFCB), fontSize = 8.sp, letterSpacing = 1.sp)
                 }
             }
-            when {
-                loading && catalogue.isEmpty() -> item { LoadingState("Curating your discovery feed…") }
-                error != null && catalogue.isEmpty() -> item { ErrorState(error) }
-                catalogue.isEmpty() -> item { EmptyState("No titles found", "Try another title or check your connection.") }
-                else -> {
+            if (loading && catalogue.isEmpty()) {
+                item { LoadingState("Curating your discovery feed…") }
+            } else if (error != null && catalogue.isEmpty()) {
+                item { ErrorState(error) }
+            } else if (catalogue.isEmpty()) {
+                item { EmptyState("No titles found", "Try another title or check your connection.") }
+            } else {
+                if (featured != null) {
                     item {
-                        Box(Modifier.fillMaxWidth().height(218.dp).clip(RoundedCornerShape(25.dp))
+                        Box(Modifier.fillMaxWidth().height(224.dp).clip(RoundedCornerShape(25.dp))
                             .background(Brush.linearGradient(listOf(Color(0xFF30263A), Color(0xFF111014))))
-                            .clickable { featured?.let(onOpen) }) {
-                            featured?.let { SeriesCover(it, Modifier.fillMaxSize()) }
-                            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x08070709), Color(0x22070709), Color(0xF5070709)))))
+                            .noirPressScale { onOpen(featured) }) {
+                            SeriesCover(featured, Modifier.fillMaxSize())
+                            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+                                listOf(Color(0x08070709), Color(0x22070709), Color(0xF5070709)))))
                             Row(Modifier.align(Alignment.TopStart).padding(14.dp).clip(RoundedCornerShape(30.dp))
                                 .background(Color(0xA51A1720)).border(1.dp, Color(0x667F7390), RoundedCornerShape(30.dp))
                                 .padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -749,38 +765,75 @@ private fun CatalogueScreen(
                                 Spacer(Modifier.width(7.dp))
                                 Text("FEATURED DISCOVERY", color = Color(0xFFE7DDED), fontSize = 8.sp, letterSpacing = 1.sp)
                             }
-                            featured?.let { item ->
-                                Row(Modifier.align(Alignment.TopEnd).padding(13.dp).clip(RoundedCornerShape(15.dp))
-                                    .background(Color(0xB51A1720)).border(1.dp, Color(0x557F7390), RoundedCornerShape(15.dp))
-                                    .padding(7.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    SourceRegistry.byId(item.sourceId)?.let { SourceIcon(it, Modifier.size(25.dp)) }
-                                }
-                                Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(17.dp)) {
-                                    Text(item.sourceName.uppercase(), color = Color(0xFFD0C4E2), fontSize = 8.sp, letterSpacing = 1.5.sp)
-                                    Spacer(Modifier.height(5.dp))
-                                    Text(item.title, color = White, fontSize = 22.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                    Spacer(Modifier.height(8.dp))
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("EXPLORE STORY", color = Color(0xFFF0EAF5), fontSize = 8.sp, letterSpacing = 1.1.sp, fontWeight = FontWeight.Bold)
-                                        Spacer(Modifier.width(6.dp))
-                                        Icon(Icons.Rounded.ArrowOutward, null, tint = Color(0xFFF0EAF5), modifier = Modifier.size(13.dp))
-                                    }
+                            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(17.dp)) {
+                                Text(featured.sourceName.uppercase(), color = Color(0xFFD0C4E2), fontSize = 8.sp, letterSpacing = 1.5.sp)
+                                Spacer(Modifier.height(5.dp))
+                                Text(featured.title, color = White, fontSize = 22.sp, lineHeight = 26.sp,
+                                    fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Spacer(Modifier.height(8.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("ENTER THE STORY", color = Color(0xFFF0EAF5), fontSize = 8.sp,
+                                        letterSpacing = 1.1.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(Modifier.width(6.dp))
+                                    Icon(Icons.Rounded.ArrowOutward, null, tint = Color(0xFFF0EAF5), modifier = Modifier.size(13.dp))
                                 }
                             }
                         }
                     }
-                    item {
+                }
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("THE COLLECTION", color = White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp)
-                            Spacer(Modifier.weight(1f))
-                            Text("FRESH FINDS", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
+                            Column(Modifier.weight(1f)) {
+                                Text("THE COLLECTION", color = White, fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp)
+                                Text(if (compactGrid) "Every story, at a glance" else "Curated finds, waiting to be opened",
+                                    color = Muted, fontSize = 9.sp)
+                            }
+                            Row(Modifier.clip(RoundedCornerShape(13.dp)).background(Color(0xFF17151B))
+                                .border(1.dp, Color(0xFF39323F), RoundedCornerShape(13.dp)).padding(3.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(width = 38.dp, height = 34.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (!compactGrid) Color(0xFF393044) else Color.Transparent)
+                                    .clickable { compactGrid = false }, contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Rounded.GridView, null,
+                                        tint = if (!compactGrid) Color(0xFFE8DDF2) else Muted, modifier = Modifier.size(18.dp))
+                                }
+                                Box(Modifier.size(width = 38.dp, height = 34.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (compactGrid) Color(0xFF393044) else Color.Transparent)
+                                    .clickable { compactGrid = true }, contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Rounded.ViewModule, null,
+                                        tint = if (compactGrid) Color(0xFFE8DDF2) else Muted, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("FOR YOU", "LATEST", "A–Z").forEach { mode ->
+                                val selected = sortMode == mode
+                                Box(Modifier.clip(RoundedCornerShape(30.dp))
+                                    .background(if (selected) Color(0xFF342B3D) else Color(0xFF151419))
+                                    .border(1.dp, if (selected) Color(0xFF665572) else Color(0xFF302C35), RoundedCornerShape(30.dp))
+                                    .clickable { sortMode = mode }.padding(horizontal = 13.dp, vertical = 8.dp)) {
+                                    Text(mode, color = if (selected) Color(0xFFE9DFF2) else Muted,
+                                        fontSize = 8.sp, letterSpacing = .8.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
                         }
                     }
-                    items(remaining.chunked(2), key = { pair -> pair.joinToString("|") { "${it.sourceId}:${it.id}" } }) { pair ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-                            pair.forEach { item -> Box(Modifier.weight(1f)) { CoverTile(item) { onOpen(item) } } }
-                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+                items(remaining.chunked(columns), key = { row -> row.joinToString("|") { "${it.sourceId}:${it.id}" } }) { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(if (compactGrid) 8.dp else 11.dp),
+                        verticalAlignment = Alignment.Top) {
+                        row.forEachIndexed { index, series ->
+                            Box(Modifier.weight(1f)) {
+                                DiscoveryCoverTile(series, compactGrid, !compactGrid && ((index + remaining.indexOf(series)) % 3 == 1)) {
+                                    onOpen(series)
+                                }
+                            }
                         }
+                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
@@ -798,6 +851,43 @@ private fun CatalogueScreen(
             }
         }
         BottomNav("Discover", onTab)
+    }
+}
+
+@Composable
+private fun DiscoveryCoverTile(series: Series, compact: Boolean, alternateHeight: Boolean, onClick: () -> Unit) {
+    val imageRatio = when {
+        compact -> 0.72f
+        alternateHeight -> 0.78f
+        else -> 0.62f
+    }
+    Column(Modifier.fillMaxWidth().animateContentSize(tween(260))
+        .clip(RoundedCornerShape(if (compact) 14.dp else 19.dp))
+        .background(Color(0xFF121116)).noirPressScale(onClick).padding(bottom = if (compact) 8.dp else 11.dp)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(imageRatio).clip(RoundedCornerShape(if (compact) 13.dp else 17.dp))
+            .background(Color(0xFF1C1A21))) {
+            SeriesCover(series, Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x24000000)))))
+            if (!compact) {
+                SourceRegistry.byId(series.sourceId)?.let { source ->
+                    Box(Modifier.align(Alignment.TopEnd).padding(7.dp).clip(CircleShape)
+                        .background(Color(0xB51A1720)).border(1.dp, Color(0x557F7390), CircleShape).padding(5.dp)) {
+                        SourceIcon(source, Modifier.size(18.dp))
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(if (compact) 7.dp else 10.dp))
+        Text(series.title, color = White, fontSize = if (compact) 10.sp else 12.sp,
+            fontWeight = FontWeight.SemiBold, maxLines = 2,
+            lineHeight = if (compact) 12.sp else 15.sp, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = if (compact) 7.dp else 10.dp))
+        if (!compact) {
+            Spacer(Modifier.height(7.dp))
+            Text(series.sourceName, color = Color(0xFFB8B0C2), fontSize = 8.sp,
+                letterSpacing = .35.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 10.dp))
+        }
     }
 }
 
