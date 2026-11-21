@@ -1007,7 +1007,18 @@ private fun NoirApp() {
                 prefs.edit().putBoolean("intro_seen_once", true).apply()
                 if (!prefs.getBoolean("welcome_seen", false)) showWelcome = true
             }
-            if (sho@Composable
+            if (showWelcome && !showIntro) NoirWelcomeWalkthrough(
+                onFinish = {
+                    showWelcome = false
+                    prefs.edit().putBoolean("welcome_seen", true).apply()
+                }
+            )
+          }
+        }
+    }
+}
+
+@Composable
 private fun CatalogueScreen(
     tab: String, query: String, onQuery: (String) -> Unit, catalogue: List<Series>,
     loading: Boolean, error: String?, hasMore: Boolean, loadingMore: Boolean, onLoadMore: () -> Unit,
