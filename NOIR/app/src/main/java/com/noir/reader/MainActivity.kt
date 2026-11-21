@@ -2838,7 +2838,7 @@ private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
         }
         Column(
             modifier = Modifier.graphicsLayer {
-                alpha = logoAlpha.value
+                this.alpha = logoAlpha.value
                 scaleX = logoScale.value
                 scaleY = logoScale.value
             },
