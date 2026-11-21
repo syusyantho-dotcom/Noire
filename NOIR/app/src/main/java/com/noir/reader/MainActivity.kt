@@ -64,6 +64,8 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.animation.core.animateDecay
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -501,10 +503,17 @@ private fun NoirApp() {
             }
         }
     }
-    LaunchedEffect(readingProgress.toMap()) {
-        val stored = JSONObject()
-        readingProgress.forEach { (key, value) -> stored.put(key, value) }
-        prefs.edit().putString("reading_progress", stored.toString()).apply()
+    LaunchedEffect(Unit) {
+        // Observed outside composition and written off the main thread, so turning pages never stalls scrolling.
+        snapshotFlow { readingProgress.toMap() }.collectLatest { snapshot ->
+            delay(900)
+            val json = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                val stored = JSONObject()
+                snapshot.forEach { (key, value) -> stored.put(key, value) }
+                stored.toString()
+            }
+            prefs.edit().putString("reading_progress", json).apply()
+        }
     }
     val seriesProgress = remember {
         mutableStateMapOf<String, Float>().apply {
@@ -514,10 +523,16 @@ private fun NoirApp() {
             }
         }
     }
-    LaunchedEffect(seriesProgress.toMap()) {
-        val stored = JSONObject()
-        seriesProgress.forEach { (key, value) -> stored.put(key, value.toDouble()) }
-        prefs.edit().putString("series_reading_progress", stored.toString()).apply()
+    LaunchedEffect(Unit) {
+        snapshotFlow { seriesProgress.toMap() }.collectLatest { snapshot ->
+            delay(900)
+            val json = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                val stored = JSONObject()
+                snapshot.forEach { (key, value) -> stored.put(key, value.toDouble()) }
+                stored.toString()
+            }
+            prefs.edit().putString("series_reading_progress", json).apply()
+        }
     }
     val readingHistory = remember {
         mutableStateMapOf<String, ReadingHistoryEntry>().apply {
@@ -537,17 +552,23 @@ private fun NoirApp() {
             }
         }
     }
-    LaunchedEffect(readingHistory.toMap()) {
-        val stored = JSONObject()
-        readingHistory.forEach { (key, entry) ->
-            stored.put(key, JSONObject()
-                .put("chapterId", entry.chapterId)
-                .put("chapterName", entry.chapterName)
-                .put("pageNumber", entry.pageNumber)
-                .put("pageCount", entry.pageCount)
-                .put("updatedAt", entry.updatedAt))
+    LaunchedEffect(Unit) {
+        snapshotFlow { readingHistory.toMap() }.collectLatest { snapshot ->
+            delay(900)
+            val json = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                val stored = JSONObject()
+                snapshot.forEach { (key, entry) ->
+                    stored.put(key, JSONObject()
+                        .put("chapterId", entry.chapterId)
+                        .put("chapterName", entry.chapterName)
+                        .put("pageNumber", entry.pageNumber)
+                        .put("pageCount", entry.pageCount)
+                        .put("updatedAt", entry.updatedAt))
+                }
+                stored.toString()
+            }
+            prefs.edit().putString("reading_history", json).apply()
         }
-        prefs.edit().putString("reading_history", stored.toString()).apply()
     }
     var radarResults by remember { mutableStateOf<List<RadarSeriesResult>>(emptyList()) }
     var radarLoading by remember { mutableStateOf(false) }
@@ -831,11 +852,15 @@ private fun NoirApp() {
             when {
                 selectedChapter != null -> ReaderScreen(
                     selected, selectedChapter!!, chapters, pages, loading, error,
-                    readingProgress[selectedChapter!!.id]
-                        ?: readingHistory["${selected!!.sourceId}:${selected!!.id}"]
-                            ?.takeIf { it.chapterId == selectedChapter!!.id }
-                            ?.let { (it.pageNumber - 1).coerceAtLeast(0) }
-                        ?: 0,
+                    remember(selectedChapter!!.id) {
+                        androidx.compose.runtime.snapshots.Snapshot.withoutReadObservation {
+                            readingProgress[selectedChapter!!.id]
+                                ?: readingHistory["${selected!!.sourceId}:${selected!!.id}"]
+                                    ?.takeIf { it.chapterId == selectedChapter!!.id }
+                                    ?.let { (it.pageNumber - 1).coerceAtLeast(0) }
+                                ?: 0
+                        }
+                    },
                     nextChapterReady = isNextChapterPreloaded,
                     readerMode = readerMode,
                     gesturePreset = studioGestures,
@@ -2781,14 +2806,63 @@ private fun DetailScreen(
     }
 }
 
+/** Remembers each page's real aspect ratio so its slot keeps the right height before and after it loads. */
+private object PageAspectCache {
+    private val ratios = java.util.concurrent.ConcurrentHashMap<String, Float>()
+    fun get(url: String): Float? = ratios[url]
+    fun put(url: String, ratio: Float) { if (ratio > 0.05f && ratio < 20f) ratios[url] = ratio }
+}
+
+private fun readerPageRequest(context: Context, url: String, widthPx: Int): ImageRequest =
+    ImageRequest.Builder(context).data(url)
+        .size(coil.size.Size(coil.size.Dimension.Pixels(widthPx), coil.size.Dimension.Undefined))
+        .build()
+
+/** A longer, steadier glide after the finger lifts (exponential decay with reduced friction). */
+private class NoirFlingBehavior(
+    private val decay: androidx.compose.animation.core.DecayAnimationSpec<Float>
+) : androidx.compose.foundation.gestures.FlingBehavior {
+    override suspend fun androidx.compose.foundation.gestures.ScrollScope.performFling(initialVelocity: Float): Float {
+        if (kotlin.math.abs(initialVelocity) <= 1f) return initialVelocity
+        var lastValue = 0f
+        var remaining = initialVelocity
+        androidx.compose.animation.core.AnimationState(0f, initialVelocity).animateDecay(decay) {
+            val delta = value - lastValue
+            val consumed = scrollBy(delta)
+            lastValue = value
+            remaining = velocity
+            if (kotlin.math.abs(delta - consumed) > 0.5f) cancelAnimation()
+        }
+        return remaining
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, contentScale: ContentScale, onTap: () -> Unit = {}) {
+private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, contentScale: ContentScale, reserveHeight: Boolean = false, onTap: () -> Unit = {}) {
     var zoom by remember(pageUrl) { mutableFloatStateOf(1f) }
     var panX by remember(pageUrl) { mutableFloatStateOf(0f) }
     var panY by remember(pageUrl) { mutableFloatStateOf(0f) }
-    AsyncImage(model = pageUrl, contentDescription = "Comic page", contentScale = contentScale,
+    val context = LocalContext.current
+    var ratio by remember(pageUrl) { mutableStateOf(PageAspectCache.get(pageUrl)) }
+    val model: Any = if (reserveHeight) {
+        remember(pageUrl) { readerPageRequest(context, pageUrl, context.resources.displayMetrics.widthPixels) }
+    } else pageUrl
+    AsyncImage(model = model, contentDescription = "Comic page", contentScale = contentScale,
+        onSuccess = { state ->
+            val drawable = state.result.drawable
+            if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
+                val measured = drawable.intrinsicWidth.toFloat() / drawable.intrinsicHeight
+                PageAspectCache.put(pageUrl, measured)
+                ratio = measured
+            }
+        },
         modifier = modifier
+            .then(
+                if (reserveHeight) Modifier.aspectRatio(ratio ?: 0.72f)
+                    .then(if (ratio == null) Modifier.background(Color(0xFF0E0D12)) else Modifier)
+                else Modifier
+            )
             .then(if (zoom > 1.01f) Modifier.graphicsLayer {
                 scaleX = zoom; scaleY = zoom; translationX = panX; translationY = panY
             } else Modifier)
@@ -2867,18 +2941,21 @@ private fun ReaderScreen(
         }
     }
 
-    LaunchedEffect(pages.size, initialPage, readerMode) {
-        if (pages.isNotEmpty()) {
-            val target = initialPage.coerceIn(0, pages.lastIndex)
-            if (isPaged) pagerState.scrollToPage(target) else listState.scrollToItem(target)
-        }
+    val latestOnProgress by rememberUpdatedState(onProgress)
+    var lastKnownPage by remember { mutableIntStateOf(initialPage.coerceAtLeast(0)) }
+    // Restore the position once when pages load or the mode changes, then track progress without
+    // re-seeking: the old live `initialPage` key re-ran scrollToItem on every page and cut flings short.
+    LaunchedEffect(pages.size, readerMode) {
+        if (pages.isEmpty()) return@LaunchedEffect
+        val target = lastKnownPage.coerceIn(0, pages.lastIndex)
+        if (isPaged) pagerState.scrollToPage(target) else listState.scrollToItem(target)
+        snapshotFlow { if (isPaged) pagerState.currentPage else listState.firstVisibleItemIndex }
+            .collect { current ->
+                lastKnownPage = current.coerceIn(0, pages.lastIndex)
+                latestOnProgress(lastKnownPage)
+            }
     }
-    LaunchedEffect(readerMode, listState.firstVisibleItemIndex, pagerState.currentPage, pages.size) {
-        if (pages.isNotEmpty()) {
-            val current = if (isPaged) pagerState.currentPage else listState.firstVisibleItemIndex
-            onProgress(current.coerceIn(0, pages.lastIndex))
-        }
-    }
+    val noirFling = remember { NoirFlingBehavior(androidx.compose.animation.core.exponentialDecay(frictionMultiplier = 0.6f)) }
     val currentPage = if (isPaged) pagerState.currentPage else listState.firstVisibleItemIndex
     var scrubPage by remember { mutableFloatStateOf(initialPage.coerceAtLeast(0).toFloat()) }
     LaunchedEffect(currentPage) { scrubPage = currentPage.toFloat() }
@@ -2895,14 +2972,23 @@ private fun ReaderScreen(
             // Keep a wider reading buffer warm, especially for long webtoon strips.
             // This follows Kotatsu's page-loader approach: prepare nearby pages before
             // the user reaches them instead of making the scroll wait on network fetches.
-            val ahead = if (isPaged) 3 else 5
-            val behind = if (isPaged) 1 else 2
+            val widthPx = context.resources.displayMetrics.widthPixels
+            val ahead = if (isPaged) 3 else 4
+            val behind = 1
             val indices = buildList {
                 for (index in (currentPage + 1)..minOf(pages.lastIndex, currentPage + ahead)) add(index)
                 for (index in (currentPage - behind) until currentPage) if (index >= 0) add(index)
             }.distinct()
+            // Load nearest-first and record real page heights before they scroll into view,
+            // so pages never pop in and shift the layout mid-fling.
             indices.forEach { index ->
-                imageLoader.enqueue(ImageRequest.Builder(context).data(pages[index]).build())
+                val url = pages[index]
+                val request = if (isPaged) ImageRequest.Builder(context).data(url).build() else readerPageRequest(context, url, widthPx)
+                val result = imageLoader.execute(request)
+                if (result is coil.request.SuccessResult) {
+                    val d = result.drawable
+                    if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) PageAspectCache.put(url, d.intrinsicWidth.toFloat() / d.intrinsicHeight)
+                }
             }
         }
     }
@@ -2961,11 +3047,13 @@ private fun ReaderScreen(
                     )
                 }
                 else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
+                    flingBehavior = noirFling,
                     userScrollEnabled = true,
                     verticalArrangement = Arrangement.spacedBy(if (readerMode == "Webtoon") 0.dp else pageGap.dp),
                     contentPadding = PaddingValues(bottom = 18.dp)) {
                     items(count = pages.size, key = { index -> "reader-page-$index" }, contentType = { "reader-page" }) { index ->
                         ReaderPageImage(pageUrl = pages[index], modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth,
+                            reserveHeight = true,
                             onTap = { if (!showChapterCinema && !showSettings && !showModeMenu) showReaderControls = !showReaderControls })
                     }
                 }
