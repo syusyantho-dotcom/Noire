@@ -795,19 +795,56 @@ private fun CatalogueScreen(
     onOpen: (Series) -> Unit, compactGrid: Boolean, onCompactGridChange: (Boolean) -> Unit,
     matureContentEnabled: Boolean, onTab: (String) -> Unit
 ) {
+    val context = LocalContext.current
+    val discoveryPrefs = remember(context) { context.getSharedPreferences("noir_discovery", Context.MODE_PRIVATE) }
     var sortMode by remember { mutableStateOf("FOR YOU") }
     var sourceFilter by remember { mutableStateOf("ALL SOURCES") }
+    var selectedStatus by remember { mutableStateOf("ANY STATUS") }
+    var selectedLanguage by remember { mutableStateOf("ANY LANGUAGE") }
+    var selectedGenres by remember { mutableStateOf(setOf<String>()) }
+    var excludedGenres by remember { mutableStateOf(setOf<String>()) }
+    var excludedWords by remember { mutableStateOf("") }
+    var showAdvancedFilters by remember { mutableStateOf(false) }
+    val savedPresets = remember {
+        mutableStateListOf<String>().apply {
+            runCatching {
+                val stored = JSONArray(discoveryPrefs.getString("saved_searches", "[]"))
+                for (index in 0 until stored.length()) {
+                    val value = stored.optString(index)
+                    if (value.isNotBlank()) add(value)
+                }
+            }
+        }
+    }
+    LaunchedEffect(savedPresets.toList()) {
+        val stored = JSONArray()
+        savedPresets.forEach(stored::put)
+        discoveryPrefs.edit().putString("saved_searches", stored.toString()).apply()
+    }
     val availableSources = remember(catalogue) { catalogue.map { it.sourceName }.distinct().sorted() }
+    val availableGenres = remember(catalogue) { catalogue.flatMap { it.tags }.distinct().sorted().take(24) }
+    val availableStatuses = remember(catalogue) { catalogue.mapNotNull { it.status }.distinct().sorted() }
+    val availableLanguages = remember(catalogue) { catalogue.mapNotNull { it.originalLanguage }.distinct().sorted() }
     LaunchedEffect(availableSources) {
         if (sourceFilter != "ALL SOURCES" && sourceFilter !in availableSources) sourceFilter = "ALL SOURCES"
     }
-    val sourceFiltered = remember(catalogue, sourceFilter) {
-        if (sourceFilter == "ALL SOURCES") catalogue else catalogue.filter { it.sourceName == sourceFilter }
+    val sourceFiltered = remember(catalogue, sourceFilter, selectedStatus, selectedLanguage, selectedGenres, excludedGenres, excludedWords) {
+        catalogue.filter { item ->
+            val sourceMatch = sourceFilter == "ALL SOURCES" || item.sourceName == sourceFilter
+            val statusMatch = selectedStatus == "ANY STATUS" || item.status.equals(selectedStatus, ignoreCase = true)
+            val languageMatch = selectedLanguage == "ANY LANGUAGE" || item.originalLanguage.equals(selectedLanguage, ignoreCase = true)
+            val genreMatch = selectedGenres.isEmpty() || selectedGenres.all { selected -> item.tags.any { it.equals(selected, true) } }
+            val excludedGenreMatch = excludedGenres.none { excluded -> item.tags.any { it.equals(excluded, true) } }
+            val words = excludedWords.split(",").map { it.trim() }.filter { it.isNotBlank() }
+            val excludedWordMatch = words.none { item.title.contains(it, true) || item.description.contains(it, true) }
+            sourceMatch && statusMatch && languageMatch && genreMatch && excludedGenreMatch && excludedWordMatch
+        }
     }
     val sortedCatalogue = remember(sourceFiltered, sortMode) {
         when (sortMode) {
             "A–Z" -> sourceFiltered.sortedBy { it.title.lowercase() }
             "SOURCE" -> sourceFiltered.sortedBy { it.sourceName.lowercase() + it.title.lowercase() }
+            "NEWEST" -> sourceFiltered.sortedByDescending { it.year ?: 0 }
             else -> sourceFiltered
         }
     }
@@ -847,6 +884,52 @@ private fun CatalogueScreen(
                         focusedTextColor = White, unfocusedTextColor = White, cursorColor = Silver
                     )
                 )
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("DISCOVERY FILTERS", color = Muted, fontSize = 8.sp, letterSpacing = 1.2.sp)
+                            Text(
+                                "${selectedGenres.size} included · ${excludedGenres.size} excluded · ${if (selectedStatus == "ANY STATUS") "any status" else selectedStatus}",
+                                color = Color(0xFFBDAFCB), fontSize = 9.sp
+                            )
+                        }
+                        Box(Modifier.clip(RoundedCornerShape(30.dp))
+                            .background(Color(0xFF342B3D)).border(1.dp, Color(0xFF665572), RoundedCornerShape(30.dp))
+                            .clickable { showAdvancedFilters = true }.padding(horizontal = 13.dp, vertical = 9.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.Tune, null, tint = Color(0xFFE9DFF2), modifier = Modifier.size(13.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("ADVANCED", color = Color(0xFFE9DFF2), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    if (savedPresets.isNotEmpty()) {
+                        Text("SAVED SEARCHES", color = Muted, fontSize = 7.sp, letterSpacing = 1.1.sp)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            items(savedPresets.toList()) { raw ->
+                                val preset = runCatching { JSONObject(raw) }.getOrNull()
+                                val label = preset?.optString("name")?.takeIf { it.isNotBlank() } ?: "Saved search"
+                                Box(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0xFF17151B))
+                                    .border(1.dp, Color(0xFF39323F), RoundedCornerShape(30.dp))
+                                    .clickable {
+                                        if (preset != null) {
+                                            onQuery(preset.optString("query"))
+                                            sourceFilter = preset.optString("source", "ALL SOURCES")
+                                            selectedStatus = preset.optString("status", "ANY STATUS")
+                                            selectedLanguage = preset.optString("language", "ANY LANGUAGE")
+                                            excludedWords = preset.optString("exclude")
+                                            selectedGenres = preset.optString("genres").split("|").filter { it.isNotBlank() }.toSet()
+                                            excludedGenres = preset.optString("excluded").split("|").filter { it.isNotBlank() }.toSet()
+                                        }
+                                    }.padding(horizontal = 11.dp, vertical = 8.dp)) {
+                                    Text(label, color = Color(0xFFE9DFF2), fontSize = 8.sp, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
             }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -942,7 +1025,7 @@ private fun CatalogueScreen(
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("FOR YOU", "A–Z", "SOURCE").forEach { mode ->
+                            listOf("FOR YOU", "A–Z", "SOURCE", "NEWEST").forEach { mode ->
                                 val selected = sortMode == mode
                                 Box(Modifier.clip(RoundedCornerShape(30.dp))
                                     .background(if (selected) Color(0xFF342B3D) else Color(0xFF151419))
@@ -983,6 +1066,93 @@ private fun CatalogueScreen(
             }
         }
         BottomNav("Discover", onTab)
+    }
+    if (showAdvancedFilters) {
+        AlertDialog(
+            onDismissRequest = { showAdvancedFilters = false },
+            containerColor = Color(0xFF151419),
+            title = { Text("Advanced discovery", color = White, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(Modifier.heightIn(max = 470.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(13.dp)) {
+                    Text("SOURCE", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.2.sp)
+                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        (listOf("ALL SOURCES") + availableSources).forEach { option ->
+                            Row(Modifier.fillMaxWidth().clickable { sourceFilter = option }, verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = sourceFilter == option, onClick = { sourceFilter = option })
+                                Text(option, color = White, fontSize = 10.sp)
+                            }
+                        }
+                    }
+                    Text("PUBLICATION STATUS", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.2.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        (listOf("ANY STATUS") + availableStatuses).take(4).forEach { option ->
+                            FilterChip(selected = selectedStatus == option, onClick = { selectedStatus = option }, label = { Text(option.replaceFirstChar { it.uppercase() }, fontSize = 8.sp) })
+                        }
+                    }
+                    Text("ORIGINAL LANGUAGE", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.2.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        (listOf("ANY LANGUAGE") + availableLanguages).take(5).forEach { option ->
+                            FilterChip(selected = selectedLanguage == option, onClick = { selectedLanguage = option }, label = { Text(option.uppercase(), fontSize = 8.sp) })
+                        }
+                    }
+                    Text("INCLUDE ALL SELECTED GENRES", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.2.sp)
+                    availableGenres.chunked(2).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            row.forEach { genre ->
+                                FilterChip(selected = genre in selectedGenres, onClick = {
+                                    selectedGenres = if (genre in selectedGenres) selectedGenres - genre else selectedGenres + genre
+                                }, label = { Text(genre, fontSize = 8.sp) })
+                            }
+                        }
+                    }
+                    Text("EXCLUDE GENRES", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.2.sp)
+                    availableGenres.chunked(2).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            row.forEach { genre ->
+                                FilterChip(selected = genre in excludedGenres, onClick = {
+                                    excludedGenres = if (genre in excludedGenres) excludedGenres - genre else excludedGenres + genre
+                                    if (genre in selectedGenres) selectedGenres = selectedGenres - genre
+                                }, label = { Text(genre, fontSize = 8.sp) })
+                            }
+                        }
+                    }
+                    Text("EXCLUDE WORDS (COMMA SEPARATED)", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.2.sp)
+                    OutlinedTextField(value = excludedWords, onValueChange = { excludedWords = it }, modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("e.g. harem, horror", color = Muted) }, singleLine = true)
+                    Text("Genre, status and language filters use metadata supplied by each source. Sources without metadata may not match these filters.", color = Muted, fontSize = 9.sp, lineHeight = 14.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val presetName = query.takeIf { it.isNotBlank() } ?: selectedGenres.firstOrNull() ?: "Custom filters"
+                    val preset = JSONObject()
+                        .put("name", presetName.take(24))
+                        .put("query", query)
+                        .put("source", sourceFilter)
+                        .put("status", selectedStatus)
+                        .put("language", selectedLanguage)
+                        .put("genres", selectedGenres.joinToString("|"))
+                        .put("excluded", excludedGenres.joinToString("|"))
+                        .put("exclude", excludedWords)
+                    val raw = preset.toString()
+                    if (raw !in savedPresets) savedPresets.add(raw)
+                    showAdvancedFilters = false
+                }) { Text("SAVE PRESET", color = Color(0xFFD6C5F2)) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        selectedGenres = emptySet()
+                        excludedGenres = emptySet()
+                        selectedStatus = "ANY STATUS"
+                        selectedLanguage = "ANY LANGUAGE"
+                        excludedWords = ""
+                        sourceFilter = "ALL SOURCES"
+                    }) { Text("RESET", color = Muted) }
+                    TextButton(onClick = { showAdvancedFilters = false }) { Text("DONE", color = White) }
+                }
+            }
+        )
     }
 }
 
