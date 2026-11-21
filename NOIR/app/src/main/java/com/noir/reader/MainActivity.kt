@@ -205,6 +205,30 @@ private fun NoirApp() {
     LaunchedEffect(discoveryCompactGrid) {
         prefs.edit().putBoolean("discovery_compact_grid", discoveryCompactGrid).apply()
     }
+    var studioAccent by remember { mutableStateOf(prefs.getString("studio_accent", "violet") ?: "violet") }
+    var studioBackdrop by remember { mutableStateOf(prefs.getString("studio_backdrop", "AMOLED") ?: "AMOLED") }
+    var studioFontScale by remember { mutableFloatStateOf(prefs.getFloat("studio_font_scale", 1f).coerceIn(.85f, 1.2f)) }
+    var studioMotion by remember { mutableStateOf(prefs.getBoolean("studio_motion", true)) }
+    var studioGestures by remember { mutableStateOf(prefs.getString("studio_gestures", "Standard") ?: "Standard") }
+    var studioLayout by remember { mutableStateOf(prefs.getString("studio_layout", "Comfortable") ?: "Comfortable") }
+    LaunchedEffect(studioAccent, studioBackdrop, studioFontScale, studioMotion, studioGestures, studioLayout) {
+        prefs.edit()
+            .putString("studio_accent", studioAccent)
+            .putString("studio_backdrop", studioBackdrop)
+            .putFloat("studio_font_scale", studioFontScale)
+            .putBoolean("studio_motion", studioMotion)
+            .putString("studio_gestures", studioGestures)
+            .putString("studio_layout", studioLayout)
+            .apply()
+    }
+    val noirAccent = when (studioAccent) {
+        "ice" -> Color(0xFF9BD8F5)
+        "crimson" -> Color(0xFFF09AA9)
+        "emerald" -> Color(0xFF9BD8B5)
+        "amber" -> Color(0xFFF0C58C)
+        "mono" -> Color(0xFFC6C6CC)
+        else -> Color(0xFFD6C5F2)
+    }
     var introSound by remember { mutableStateOf(prefs.getBoolean("intro_sound", true)) }
     var launchIntro by remember { mutableStateOf(prefs.getBoolean("launch_intro", true)) }
     var matureContentEnabled by remember { mutableStateOf(prefs.getBoolean("mature_content_18_plus", false)) }
@@ -579,7 +603,7 @@ private fun NoirApp() {
         nextChapterForReader?.let { preloadedChapterPages.containsKey(OfflineChapterStore.key(item, it)) }
     } ?: false
 
-    MaterialTheme(colorScheme = darkColorScheme(background = Black, surface = Panel, primary = Silver, onBackground = White, onSurface = White)) {
+    MaterialTheme(colorScheme = darkColorScheme(background = Black, surface = Panel, primary = noirAccent, secondary = noirAccent, onBackground = White, onSurface = White)) {
         Surface(Modifier.fillMaxSize(), color = Black) {
           Box(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().graphicsLayer {
@@ -695,6 +719,22 @@ private fun NoirApp() {
                         pendingResumeKey = "${item.sourceId}:${item.id}"
                         openSeries(item)
                     },
+                    onTab = { navigateTab(it) }
+                )
+                tab == "Studio" -> NoirCustomizationStudio(
+                    accent = studioAccent,
+                    onAccent = { studioAccent = it },
+                    backdrop = studioBackdrop,
+                    onBackdrop = { studioBackdrop = it },
+                    fontScale = studioFontScale,
+                    onFontScale = { studioFontScale = it },
+                    motionEnabled = studioMotion,
+                    onMotionEnabled = { studioMotion = it },
+                    gestures = studioGestures,
+                    onGestures = { studioGestures = it },
+                    layout = studioLayout,
+                    onLayout = { studioLayout = it },
+                    onBack = { navigateTab("Profile") },
                     onTab = { navigateTab(it) }
                 )
                 tab == "Profile" -> {
@@ -1486,6 +1526,11 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
         Spacer(Modifier.height(22.dp))
         Text("INFORMATION", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Panel).clickable { onTab("Studio") }.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Palette, null, tint = Color(0xFFD6C5F2))
+            Text("Customization Studio", color = White, fontSize = 13.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
+            Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
+        }
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Panel).clickable(onClick = onWhatsNew).padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.AutoAwesome, null, tint = Color(0xFFD6C5F2))
             Text("What’s New in NOIR", color = White, fontSize = 13.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
