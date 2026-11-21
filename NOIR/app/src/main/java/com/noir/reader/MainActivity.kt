@@ -2520,6 +2520,28 @@ private fun LibraryScreen(
             Text("Library", color = White, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(5.dp))
             Text("${items.size} SAVED TITLES", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 1.5.sp)
+            Spacer(Modifier.height(15.dp))
+            val trackedTitles = readingHistory.size
+            val averageProgress = if (progressBySeries.isEmpty()) 0 else
+                (progressBySeries.values.average().coerceIn(0.0, 1.0) * 100).toInt()
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                    .background(Brush.linearGradient(listOf(Color(0xFF211B29), Color(0xFF141217))))
+                    .border(1.dp, Color(0xFF3A3042), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 15.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("YOUR READING PULSE", color = Color(0xFFBDA8D2), fontSize = 7.sp, letterSpacing = 1.5.sp)
+                    Text("$trackedTitles stories in progress", color = White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Your progress, gathered in one place", color = Muted, fontSize = 9.sp)
+                }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("$averageProgress%", color = Color(0xFFE7D9F2), fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                    Text("AVG. PROGRESS", color = Muted, fontSize = 7.sp, letterSpacing = .8.sp)
+                }
+            }
             Spacer(Modifier.height(14.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(end = 8.dp)) {
                 items(categoryOptions) { category ->
