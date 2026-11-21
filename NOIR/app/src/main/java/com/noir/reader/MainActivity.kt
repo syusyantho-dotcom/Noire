@@ -80,6 +80,9 @@ import coil.request.ImageRequest
 import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -511,12 +514,18 @@ private fun NoirApp() {
                 hasMoreCatalogue = false
                 val combined = mutableListOf<Series>()
                 val failures = mutableListOf<String>()
-                for (provider in activeSources) {
-                    try {
-                        combined.addAll(if (query.isBlank()) provider.popular(0) else provider.search(query, 0))
-                    } catch (providerError: Exception) {
-                        failures.add("${provider.name}: ${providerError.message ?: "unavailable"}")
-                    }
+                val sourceResults = coroutineScope {
+                    activeSources.map { provider ->
+                        async {
+                            provider to runCatching {
+                                if (query.isBlank()) provider.popular(0) else provider.search(query, 0)
+                            }
+                        }
+                    }.awaitAll()
+                }
+                sourceResults.forEach { (provider, result) ->
+                    result.onSuccess { combined.addAll(it) }
+                        .onFailure { failures.add("${provider.name}: ${it.message ?: "unavailable"}") }
                 }
                 catalogue = combined.distinctBy { "${it.sourceId}:${it.id}" }
                 hasMoreCatalogue = combined.isNotEmpty()
@@ -534,12 +543,18 @@ private fun NoirApp() {
                 val nextPage = cataloguePage + 1
                 val combined = mutableListOf<Series>()
                 val failures = mutableListOf<String>()
-                for (provider in activeSources) {
-                    try {
-                        combined.addAll(if (query.isBlank()) provider.popular(nextPage) else provider.search(query, nextPage))
-                    } catch (providerError: Exception) {
-                        failures.add("${provider.name}: ${providerError.message ?: "unavailable"}")
-                    }
+                val sourceResults = coroutineScope {
+                    activeSources.map { provider ->
+                        async {
+                            provider to runCatching {
+                                if (query.isBlank()) provider.popular(nextPage) else provider.search(query, nextPage)
+                            }
+                        }
+                    }.awaitAll()
+                }
+                sourceResults.forEach { (provider, result) ->
+                    result.onSuccess { combined.addAll(it) }
+                        .onFailure { failures.add("${provider.name}: ${it.message ?: "unavailable"}") }
                 }
                 val merged = (catalogue + combined).distinctBy { "${it.sourceId}:${it.id}" }
                 catalogue = merged
