@@ -2415,7 +2415,6 @@ private fun ReaderScreen(
                             scaleY = 1f - (pageDistance * 0.035f)
                             translationX = pageOffset * -12.dp.toPx()
                             rotationY = if (motionEnabled) pageOffset * 5.5f else 0f
-                            translationZ = if (motionEnabled) -pageDistance * 18.dp.toPx() else 0f
                             cameraDistance = 28f * density
                         }.clip(RoundedCornerShape(5.dp)),
                         contentScale = if (fitToWidth) ContentScale.FillWidth else ContentScale.Fit,
