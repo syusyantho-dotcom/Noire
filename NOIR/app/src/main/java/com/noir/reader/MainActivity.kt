@@ -24,6 +24,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -1203,6 +1204,7 @@ private fun NoirGlowButton(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HomeContinueCard(series: Series, history: ReadingHistoryEntry?, overallProgress: Float, onResume: () -> Unit, onOpenDetail: () -> Unit) {
     val pageProgress = history?.let { (it.pageNumber.toFloat() / it.pageCount.coerceAtLeast(1)).coerceIn(0f, 1f) } ?: overallProgress.coerceIn(0f, 1f)
@@ -1920,12 +1922,12 @@ private fun ReaderScreen(
                     Text("${(currentPage + 1).coerceAtMost(pages.size)} / ${pages.size}", color = Color(0xFFE8E4EC), fontSize = 9.sp, letterSpacing = .8.sp)
                 }
             }
-            AnimatedVisibility(
-                visible = showReaderControls,
-                enter = fadeIn(tween(240)),
-                exit = fadeOut(tween(240)),
-                modifier = Modifier.align(Alignment.CenterStart).padding(start = 7.dp)
-            ) {
+            Box(Modifier.align(Alignment.CenterStart).padding(start = 7.dp)) {
+                AnimatedVisibility(
+                    visible = showReaderControls,
+                    enter = fadeIn(tween(240)),
+                    exit = fadeOut(tween(240))
+                ) {
                 Column(Modifier.clip(RoundedCornerShape(28.dp))
                     .background(Brush.verticalGradient(listOf(Color(0xE83A3442), Color(0xE8191820), Color(0xE82A2632))))
                     .border(1.dp, Color(0x777F788B), RoundedCornerShape(28.dp))
@@ -1958,6 +1960,7 @@ private fun ReaderScreen(
                     IconButton(onClick = { showSettings = true }) { Icon(Icons.Rounded.Tune, "Reader settings", tint = Silver) }
                     HorizontalDivider(color = Color(0x557F788B), modifier = Modifier.width(27.dp))
                     IconButton(onClick = onBack) { Icon(Icons.Rounded.Close, "Close reader", tint = Color(0xFFE4DCEB)) }
+                }
                 }
             }
             if (!showReaderControls) {
