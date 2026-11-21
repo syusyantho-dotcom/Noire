@@ -1,6 +1,7 @@
 package com.noir.reader
 
 import android.os.Bundle
+import android.app.Activity
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -9,6 +10,8 @@ import android.media.AudioManager
 import android.media.MediaPlayer
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -205,6 +208,49 @@ private data class RadarSeriesResult(
 @Composable
 private fun NoirApp() {
     val context = LocalContext.current
+    val backupPrefsNames = listOf("noir_preferences", "noir_reader_settings", "noir_sources", "noir_discovery", "noir_customization")
+    val exportBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) runCatching {
+            val root = JSONObject()
+            backupPrefsNames.forEach { name ->
+                val values = context.getSharedPreferences(name, Context.MODE_PRIVATE).all
+                val section = JSONObject()
+                values.forEach { (key, value) ->
+                    when (value) {
+                        is Set<*> -> section.put(key, JSONArray(value.map { it.toString() }))
+                        is String, is Boolean, is Int, is Long, is Float -> section.put(key, value)
+                    }
+                }
+                root.put(name, section)
+            }
+            context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(root.toString(2)) }
+                ?: error("Could not open backup destination")
+        }.onFailure { android.widget.Toast.makeText(context, "Backup failed: ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
+        else android.widget.Toast.makeText(context, "Backup exported", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    val importBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) runCatching {
+            val raw = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                ?: error("Could not read backup file")
+            val root = JSONObject(raw)
+            backupPrefsNames.forEach { name ->
+                val section = root.optJSONObject(name) ?: return@forEach
+                val editor = context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear()
+                section.keys().forEach { key ->
+                    when (val value = section.opt(key)) {
+                        is String -> editor.putString(key, value)
+                        is Boolean -> editor.putBoolean(key, value)
+                        is Int -> editor.putInt(key, value)
+                        is Long -> editor.putLong(key, value)
+                        is Double -> editor.putFloat(key, value.toFloat())
+                        is JSONArray -> editor.putStringSet(key, buildSet { for (i in 0 until value.length()) add(value.optString(i)) })
+                    }
+                }
+                editor.apply()
+            }
+            (context as? Activity)?.recreate()
+        }.onFailure { android.widget.Toast.makeText(context, "Restore failed: ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
+    }
     val prefs = remember { context.getSharedPreferences("noir_preferences", Context.MODE_PRIVATE) }
     val sourcePrefs = remember { context.getSharedPreferences("noir_sources", Context.MODE_PRIVATE) }
     val enabledSourceIds = remember {
@@ -927,6 +973,8 @@ private fun NoirApp() {
                         readingHistory.size, averageProgress, latestSeries?.title ?: latestReading?.chapterName.orEmpty(),
                         activityLabel, weeklyActivity,
                         onRadar = { navigateTab("Radar") },
+                        onExportBackup = { exportBackup.launch("NOIR-backup.json") },
+                        onImportBackup = { importBackup.launch(arrayOf("application/json", "text/json")) },
                         { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
                         { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
                         { matureContentEnabled = it; prefs.edit().putBoolean("mature_content_18_plus", it).apply() },
@@ -2056,7 +2104,7 @@ private fun WeeklyActivityChart(activity: List<Int>) {
 }
 
 @Composable
-private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, savedCount: Int, trackedCount: Int, averageProgress: Int, latestTitle: String, activityLabel: String, weeklyActivity: List<Int>, onRadar: () -> Unit, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit) {
+private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, savedCount: Int, trackedCount: Int, averageProgress: Int, latestTitle: String, activityLabel: String, weeklyActivity: List<Int>, onRadar: () -> Unit, onExportBackup: () -> Unit, onImportBackup: () -> Unit, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit) {
     var showMatureConfirmation by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
       Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
@@ -2115,6 +2163,22 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
         SettingSwitch("Intro sound", "Play the short chime when NOIR opens", introSound, onIntroSound)
         SettingSwitch("One-time intro", "Play the NOIR welcome animation once on first launch", launchIntro, onLaunchIntro)
         SettingSwitch("Mature catalogues (18+)", "Show adult-rated titles from sources that provide them", matureContentEnabled, { enabled -> if (enabled) showMatureConfirmation = true else onMatureContent(false) })
+        Spacer(Modifier.height(22.dp))
+        Text("BACKUP & RESTORE", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            OutlinedButton(onClick = onExportBackup, modifier = Modifier.weight(1f), shape = RoundedCornerShape(13.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Silver)) {
+                Icon(Icons.Rounded.FileUpload, null, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(7.dp))
+                Text("EXPORT", fontSize = 9.sp, letterSpacing = 1.sp)
+            }
+            OutlinedButton(onClick = onImportBackup, modifier = Modifier.weight(1f), shape = RoundedCornerShape(13.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Silver)) {
+                Icon(Icons.Rounded.FileDownload, null, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(7.dp))
+                Text("RESTORE", fontSize = 9.sp, letterSpacing = 1.sp)
+            }
+        }
+        Text("Backs up NOIR library, progress, reader settings, source settings and discovery preferences. Restore replaces those local preferences.", color = Muted, fontSize = 8.sp, lineHeight = 13.sp)
         Spacer(Modifier.height(22.dp))
         Text("INFORMATION", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
