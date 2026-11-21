@@ -409,7 +409,7 @@ private fun NoirApp() {
         selected = item
     }
     var loading by remember { mutableStateOf(false) }
-    var showIntro by remember { mutableStateOf(launchIntro) }
+    var showIntro by remember { mutableStateOf(launchIntro && !prefs.getBoolean("intro_seen_once", false)) }
     LaunchedEffect(showIntro) {
         if (!showIntro && shouldShowWhatsNew) {
             delay(420)
@@ -425,7 +425,7 @@ private fun NoirApp() {
 
     BackHandler(enabled = showIntro || showAbout || showWhatsNew || navigationStack.isNotEmpty() || selectedChapter != null || selectedSource != null || selected != null || tab != "Home") {
         when {
-            showIntro -> showIntro = false
+            showIntro -> { showIntro = false; prefs.edit().putBoolean("intro_seen_once", true).apply() }
             showAbout -> showAbout = false
             showWhatsNew -> { showWhatsNew = false; prefs.edit().putString("seen_whats_new", whatsNewVersion).apply() }
             else -> goBack()
@@ -698,7 +698,10 @@ private fun NoirApp() {
                 confirmButton = { TextButton(onClick = { showAbout = false }) { Text("CLOSE", color = Silver) } },
                 containerColor = Panel
             )
-            if (showIntro) IntroOverlay(introSound) { showIntro = false }
+            if (showIntro) IntroOverlay(introSound) {
+                showIntro = false
+                prefs.edit().putBoolean("intro_seen_once", true).apply()
+            }
           }
         }
     }
@@ -1384,7 +1387,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
         Text("APP SETTINGS", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
         SettingSwitch("Intro sound", "Play the short chime when NOIR opens", introSound, onIntroSound)
-        SettingSwitch("Launch animation", "Show the NOIR intro on app launch", launchIntro, onLaunchIntro)
+        SettingSwitch("One-time intro", "Play the NOIR welcome animation once on first launch", launchIntro, onLaunchIntro)
         SettingSwitch("Mature catalogues (18+)", "Show adult-rated titles from sources that provide them", matureContentEnabled, { enabled -> if (enabled) showMatureConfirmation = true else onMatureContent(false) })
         Spacer(Modifier.height(22.dp))
         Text("INFORMATION", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
