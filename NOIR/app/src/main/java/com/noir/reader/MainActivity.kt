@@ -1825,10 +1825,12 @@ private fun ReaderScreen(
     val readerPrefs = remember(context) { context.getSharedPreferences("noir_reader_settings", Context.MODE_PRIVATE) }
     var dimAmount by remember { mutableFloatStateOf(readerPrefs.getFloat("screen_dim", 0f).coerceIn(0f, 0.65f)) }
     var fitToWidth by remember { mutableStateOf(readerPrefs.getBoolean("fit_to_width", true)) }
+    var pageGap by remember { mutableFloatStateOf(readerPrefs.getFloat("page_gap", 1f).coerceIn(0f, 24f)) }
     val readerScope = rememberCoroutineScope()
     val imageLoader = remember(context) { context.imageLoader }
     LaunchedEffect(dimAmount) { readerPrefs.edit().putFloat("screen_dim", dimAmount).apply() }
     LaunchedEffect(fitToWidth) { readerPrefs.edit().putBoolean("fit_to_width", fitToWidth).apply() }
+    LaunchedEffect(pageGap) { readerPrefs.edit().putFloat("page_gap", pageGap).apply() }
     val isPaged = readerMode == "Horizontal" || readerMode == "Right to left"
     var showChapterCinema by remember(chapter.id) { mutableStateOf(false) }
     val cinemaProgress by animateFloatAsState(
@@ -1936,7 +1938,7 @@ private fun ReaderScreen(
                 }
                 else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
                     flingBehavior = readerFlingBehavior,
-                    verticalArrangement = Arrangement.spacedBy(if (readerMode == "Webtoon") 0.dp else 1.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (readerMode == "Webtoon") 0.dp else pageGap.dp),
                     contentPadding = PaddingValues(bottom = 18.dp)) {
                     items(count = pages.size, key = { index -> "reader-page-$index" }, contentType = { "reader-page" }) { index ->
                         ReaderPageImage(pageUrl = pages[index], modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth,
@@ -2093,6 +2095,14 @@ private fun ReaderScreen(
                     }
                     Switch(checked = fitToWidth, onCheckedChange = { fitToWidth = it })
                 }
+                Text("PAGE SPACING", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Gap", color = White, fontSize = 12.sp)
+                    Spacer(Modifier.weight(1f))
+                    Text("${pageGap.toInt()} dp", color = Color(0xFFD6C5F2), fontSize = 11.sp)
+                }
+                Slider(value = pageGap, onValueChange = { pageGap = it }, valueRange = 0f..24f)
+                Text("Webtoon mode keeps pages seamlessly connected.", color = Muted, fontSize = 10.sp)
                 Text("ZOOM", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp)
                 Text("Double-tap a page to zoom in or reset. Drag to pan while zoomed.", color = Muted, fontSize = 11.sp, lineHeight = 17.sp)
                 Text("SCREEN DIMMING", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp)
