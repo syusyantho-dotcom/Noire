@@ -18,6 +18,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.togetherWith
+import androidx.compose.ui.text.withStyle
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
