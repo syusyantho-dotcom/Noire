@@ -630,6 +630,7 @@ private fun NoirApp() {
                         ?: 0,
                     nextChapterReady = isNextChapterPreloaded,
                     readerMode = readerMode,
+                    gesturePreset = studioGestures,
                     onModeChange = { mode -> readerMode = mode; prefs.edit().putString("reader_mode", mode).apply() },
                     onProgress = { page ->
                         val activeChapter = selectedChapter
@@ -812,6 +813,29 @@ private fun CatalogueScreen(
     var excludedGenres by remember { mutableStateOf(setOf<String>()) }
     var excludedWords by remember { mutableStateOf("") }
     var showAdvancedFilters by remember { mutableStateOf(false) }
+    val searchHistory = remember {
+        mutableStateListOf<String>().apply {
+            runCatching {
+                val stored = JSONArray(discoveryPrefs.getString("search_history", "[]"))
+                for (index in 0 until stored.length()) {
+                    val value = stored.optString(index)
+                    if (value.isNotBlank()) add(value)
+                }
+            }
+        }
+    }
+    LaunchedEffect(query) {
+        val term = query.trim()
+        if (term.length >= 2) {
+            delay(900)
+            searchHistory.remove(term)
+            searchHistory.add(0, term)
+            while (searchHistory.size > 8) searchHistory.removeAt(searchHistory.lastIndex)
+            val stored = JSONArray()
+            searchHistory.forEach(stored::put)
+            discoveryPrefs.edit().putString("search_history", stored.toString()).apply()
+        }
+    }
     val savedPresets = remember {
         mutableStateListOf<String>().apply {
             runCatching {
@@ -891,6 +915,22 @@ private fun CatalogueScreen(
                         focusedTextColor = White, unfocusedTextColor = White, cursorColor = Silver
                     )
                 )
+            }
+            if (searchHistory.isNotEmpty()) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text("RECENT SEARCHES", color = Muted, fontSize = 7.sp, letterSpacing = 1.1.sp)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            items(searchHistory.toList()) { term ->
+                                Box(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0xFF17151B))
+                                    .border(1.dp, Color(0xFF39323F), RoundedCornerShape(30.dp))
+                                    .clickable { onQuery(term) }.padding(horizontal = 11.dp, vertical = 8.dp)) {
+                                    Text(term, color = Color(0xFFC6C0CC), fontSize = 8.sp, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
             }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -2197,7 +2237,7 @@ private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, cont
 @Composable
 private fun ReaderScreen(
     series: Series?, chapter: Chapter, chapterList: List<Chapter>, pages: List<String>, loading: Boolean, error: String?,
-    initialPage: Int, nextChapterReady: Boolean, readerMode: String, onModeChange: (String) -> Unit,
+    initialPage: Int, nextChapterReady: Boolean, readerMode: String, gesturePreset: String, onModeChange: (String) -> Unit,
     onProgress: (Int) -> Unit, onNextChapter: () -> Unit, onBack: () -> Unit
 ) {
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage.coerceAtLeast(0))
@@ -2407,7 +2447,8 @@ private fun ReaderScreen(
                     )
                 }
             }
-            Column(Modifier.align(Alignment.CenterStart).padding(start = 7.dp)) {
+            Column(Modifier.align(if (gesturePreset == "One-handed") Alignment.CenterEnd else Alignment.CenterStart)
+                .padding(start = if (gesturePreset == "One-handed") 0.dp else 7.dp, end = if (gesturePreset == "One-handed") 7.dp else 0.dp)) {
                 AnimatedVisibility(
                     visible = showReaderControls,
                     enter = fadeIn(tween(240)),
