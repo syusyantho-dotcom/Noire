@@ -225,8 +225,9 @@ private fun NoirApp() {
             }
             context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(root.toString(2)) }
                 ?: error("Could not open backup destination")
+        }.onSuccess {
+            android.widget.Toast.makeText(context, "Backup exported", android.widget.Toast.LENGTH_SHORT).show()
         }.onFailure { android.widget.Toast.makeText(context, "Backup failed: ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
-        else android.widget.Toast.makeText(context, "Backup exported", android.widget.Toast.LENGTH_SHORT).show()
     }
     val importBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) runCatching {
