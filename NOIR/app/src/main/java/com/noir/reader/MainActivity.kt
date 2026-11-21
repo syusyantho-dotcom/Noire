@@ -26,6 +26,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
@@ -63,6 +64,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate as rotateDraw
 import androidx.compose.ui.graphics.graphicsLayer
@@ -632,7 +634,9 @@ private fun NoirApp() {
                 if (enteringReader) {
                     shape = RoundedCornerShape(routeCorner.dp)
                     clip = true
+                    cameraDistance = 32f * density
                 }
+                rotationX = if (studioMotion && enteringReader) (1f - routeAlpha) * 1.6f else 0f
             }) {
             key(routeKey) {
             when {
@@ -646,6 +650,7 @@ private fun NoirApp() {
                     nextChapterReady = isNextChapterPreloaded,
                     readerMode = readerMode,
                     gesturePreset = studioGestures,
+                    motionEnabled = studioMotion,
                     onModeChange = { mode -> readerMode = mode; prefs.edit().putString("reader_mode", mode).apply() },
                     onProgress = { page ->
                         val activeChapter = selectedChapter
@@ -1624,6 +1629,7 @@ private fun Modifier.noirPressScale(onClick: () -> Unit): Modifier {
     return this.graphicsLayer {
         scaleX = scale
         scaleY = scale
+        translationY = if (pressed) 1.5f else 0f
     }.clickable(
         interactionSource = interactionSource,
         indication = null, // Press feedback is provided by the spring scale animation.
@@ -2253,7 +2259,8 @@ private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, cont
 private fun ReaderScreen(
     series: Series?, chapter: Chapter, chapterList: List<Chapter>, pages: List<String>, loading: Boolean, error: String?,
     initialPage: Int, nextChapterReady: Boolean, readerMode: String, gesturePreset: String, onModeChange: (String) -> Unit,
-    onProgress: (Int) -> Unit, onNextChapter: () -> Unit, onBack: () -> Unit
+    onProgress: (Int) -> Unit, onNextChapter: () -> Unit, onBack: () -> Unit,
+    motionEnabled: Boolean
 ) {
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage.coerceAtLeast(0))
     val hasNextChapter = chapterList.indexOfFirst { it.id == chapter.id }.let { it >= 0 && it < chapterList.lastIndex }
@@ -2407,7 +2414,9 @@ private fun ReaderScreen(
                             scaleX = 1f - (pageDistance * 0.035f)
                             scaleY = 1f - (pageDistance * 0.035f)
                             translationX = pageOffset * -12.dp.toPx()
-                            cameraDistance = 24f * density
+                            rotationY = if (motionEnabled) pageOffset * 5.5f else 0f
+                            translationZ = if (motionEnabled) -pageDistance * 18.dp.toPx() else 0f
+                            cameraDistance = 28f * density
                         }.clip(RoundedCornerShape(5.dp)),
                         contentScale = if (fitToWidth) ContentScale.FillWidth else ContentScale.Fit,
                         onTap = { if (!showChapterCinema && !showSettings && !showModeMenu) showReaderControls = !showReaderControls }
@@ -2466,8 +2475,10 @@ private fun ReaderScreen(
                 .padding(start = if (gesturePreset == "One-handed") 0.dp else 7.dp, end = if (gesturePreset == "One-handed") 7.dp else 0.dp)) {
                 AnimatedVisibility(
                     visible = showReaderControls,
-                    enter = fadeIn(tween(240)),
-                    exit = fadeOut(tween(240))
+                    enter = fadeIn(tween(if (motionEnabled) 260 else 0)) +
+                        slideInHorizontally(tween(if (motionEnabled) 340 else 0, easing = FastOutSlowInEasing)) { if (gesturePreset == "One-handed") it / 3 else -it / 3 },
+                    exit = fadeOut(tween(if (motionEnabled) 190 else 0)) +
+                        slideOutHorizontally(tween(if (motionEnabled) 240 else 0, easing = FastOutSlowInEasing)) { if (gesturePreset == "One-handed") it / 4 else -it / 4 }
                 ) {
                 Column(Modifier.clip(RoundedCornerShape(28.dp))
                     .background(Brush.verticalGradient(listOf(Color(0xE83A3442), Color(0xE8191820), Color(0xE82A2632))))
@@ -2528,8 +2539,16 @@ private fun ReaderScreen(
                             Color(0xF2070608), Color(0xFF070608)
                         ))
                     ))
+                    if (motionEnabled) NoirMotionAtmosphere(Modifier.fillMaxSize())
                     Column(
-                        Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 34.dp),
+                        Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 34.dp)
+                            .graphicsLayer {
+                                val reveal = cinemaAlpha.coerceIn(0f, 1f)
+                                alpha = reveal
+                                scaleX = 0.965f + reveal * 0.035f
+                                scaleY = 0.965f + reveal * 0.035f
+                                translationY = (1f - reveal) * 24.dp.toPx()
+                            },
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
@@ -3334,6 +3353,45 @@ internal fun BottomNav(tab: String, onTab: (String) -> Unit) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun NoirMotionAtmosphere(modifier: Modifier = Modifier) {
+    val motion = rememberInfiniteTransition(label = "noir-motion-atmosphere")
+    val driftA by motion.animateFloat(
+        initialValue = -0.08f, targetValue = 0.12f,
+        animationSpec = infiniteRepeatable(tween(7200, easing = FastOutSlowInEasing), repeatMode = androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "noir-orb-drift-a"
+    )
+    val driftB by motion.animateFloat(
+        initialValue = 0.10f, targetValue = -0.09f,
+        animationSpec = infiniteRepeatable(tween(9100, easing = FastOutSlowInEasing), repeatMode = androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "noir-orb-drift-b"
+    )
+    val pulse by motion.animateFloat(
+        initialValue = 0.62f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), repeatMode = androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "noir-orb-pulse"
+    )
+    Canvas(modifier) {
+        val violet = Color(0xFF8E5BCB)
+        val ice = Color(0xFFB7A3D8)
+        drawCircle(violet.copy(alpha = 0.10f * pulse), radius = size.minDimension * 0.34f,
+            center = Offset(size.width * (0.12f + driftA), size.height * 0.30f))
+        drawCircle(ice.copy(alpha = 0.065f * pulse), radius = size.minDimension * 0.26f,
+            center = Offset(size.width * (0.88f + driftB), size.height * 0.68f))
+        drawCircle(violet.copy(alpha = 0.045f * pulse), radius = size.minDimension * 0.18f,
+            center = Offset(size.width * 0.52f, size.height * (0.18f - driftB * 0.35f)))
+        val specks = listOf(
+            Offset(0.18f, 0.22f), Offset(0.79f, 0.17f), Offset(0.72f, 0.78f),
+            Offset(0.27f, 0.73f), Offset(0.91f, 0.43f), Offset(0.09f, 0.56f)
+        )
+        specks.forEachIndexed { index, point ->
+            val alpha = (0.16f + 0.22f * pulse) * if (index % 2 == 0) 1f else 0.65f
+            drawCircle(Color(0xFFDCCBFA).copy(alpha = alpha), radius = (1.2f + (index % 3) * 0.55f).dp.toPx(),
+                center = Offset(size.width * point.x, size.height * point.y))
         }
     }
 }
