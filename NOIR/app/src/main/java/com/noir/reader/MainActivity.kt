@@ -74,6 +74,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -1458,7 +1459,7 @@ private fun DiscoveryCoverTile(series: Series, compact: Boolean, alternateHeight
                         cornerRadius = 17.dp.toPx(),
                         progress = glowProgress,
                         inset = 1.5.dp.toPx(),
-                        glowColor = Color(0xFFDCC5FF)
+                        arcFraction = 0.18f
                     )
                 }
             }) {
@@ -1708,63 +1709,71 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
 }
 
 
+private val GlowLeadColor = Color(0xFF6F7CFF)
+private val GlowTailColor = Color(0xFFD24DFF)
+
 /**
- * Draws a bright comet that physically travels along a rounded-rectangle perimeter.
- * The card/content never rotates; only sampled points on the border are animated.
+ * Draws a lens-shaped highlight that travels along a rounded-rectangle border:
+ * a white-hot core that tapers into blue and magenta ends, with a soft halo.
+ * Only the highlight moves; the content itself never rotates.
  */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTravelingOutlineGlow(
     cornerRadius: Float,
     progress: Float,
     inset: Float,
-    glowColor: Color
+    arcFraction: Float = 0.22f,
+    strokeWidth: Float = 1.5.dp.toPx()
 ) {
     val left = inset
     val top = inset
     val right = size.width - inset
     val bottom = size.height - inset
     if (right <= left || bottom <= top) return
+    val radius = cornerRadius.coerceIn(0f, minOf(right - left, bottom - top) / 2f)
 
     val outline = android.graphics.Path().apply {
-        addRoundRect(
-            android.graphics.RectF(left, top, right, bottom),
-            cornerRadius.coerceAtMost((bottom - top) / 2f),
-            cornerRadius.coerceAtMost((bottom - top) / 2f),
-            android.graphics.Path.Direction.CW
-        )
+        addRoundRect(android.graphics.RectF(left, top, right, bottom), radius, radius, android.graphics.Path.Direction.CW)
     }
     val measure = android.graphics.PathMeasure(outline, false)
     val perimeter = measure.length
     if (perimeter <= 0f) return
 
-    val position = FloatArray(2)
-    // A tapered trail followed by a hot white-violet leading point.
-    val trail = listOf(
-        -0.105f to 0.10f, -0.088f to 0.14f, -0.071f to 0.19f,
-        -0.054f to 0.27f, -0.037f to 0.38f, -0.020f to 0.58f,
-        -0.008f to 0.82f, 0.000f to 1.00f
-    )
-    trail.forEachIndexed { index, (offset, strength) ->
-        val distance = (((progress + offset + 1f) % 1f) * perimeter)
-        if (measure.getPosTan(distance, position, null)) {
-            val centerPoint = Offset(position[0], position[1])
-            drawCircle(
-                color = glowColor.copy(alpha = 0.13f * strength),
-                radius = (7.5f + index * 0.12f).dp.toPx(),
-                center = centerPoint
-            )
-            drawCircle(
-                color = glowColor.copy(alpha = 0.42f * strength),
-                radius = (3.8f + index * 0.08f).dp.toPx(),
-                center = centerPoint
-            )
-            if (index >= 5) {
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.92f * strength),
-                    radius = (1.15f + if (index == 7) 0.65f else 0f).dp.toPx(),
-                    center = centerPoint
-                )
-            }
+    val arcLength = perimeter * arcFraction.coerceIn(0.05f, 0.6f)
+    val segments = 16
+    val segmentLength = arcLength / segments
+    val startDistance = progress * perimeter - arcLength / 2f
+    val segment = android.graphics.Path()
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        style = android.graphics.Paint.Style.STROKE
+        strokeCap = android.graphics.Paint.Cap.BUTT
+    }
+    val canvas = drawContext.canvas.nativeCanvas
+
+    for (i in 0 until segments) {
+        val t = (i + 0.5f) / segments
+        val lens = kotlin.math.sin(Math.PI * t).toFloat()
+        if (lens < 0.02f) continue
+        val from = (((startDistance + i * segmentLength) % perimeter) + perimeter) % perimeter
+        val to = from + segmentLength
+        segment.reset()
+        if (to <= perimeter) {
+            measure.getSegment(from, to, segment, true)
+        } else {
+            measure.getSegment(from, perimeter, segment, true)
+            measure.getSegment(0f, to - perimeter, segment, true)
         }
+        val tint = androidx.compose.ui.graphics.lerp(GlowTailColor, GlowLeadColor, t)
+        val hot = androidx.compose.ui.graphics.lerp(tint, Color.White, Math.pow(lens.toDouble(), 2.5).toFloat())
+
+        paint.strokeWidth = strokeWidth * 6f
+        paint.color = tint.copy(alpha = 0.10f * lens).toArgb()
+        canvas.drawPath(segment, paint)
+        paint.strokeWidth = strokeWidth * 3f
+        paint.color = tint.copy(alpha = 0.24f * lens).toArgb()
+        canvas.drawPath(segment, paint)
+        paint.strokeWidth = strokeWidth * (0.7f + 0.5f * lens)
+        paint.color = hot.copy(alpha = 0.25f + 0.75f * lens).toArgb()
+        canvas.drawPath(segment, paint)
     }
 }
 
@@ -1790,17 +1799,20 @@ private fun NoirGlowButton(
             .clip(shape)
             .background(Color(0xFF08070B))
             .drawBehind {
-                val radius = CornerRadius(size.height / 2f)
+                val radius = CornerRadius(size.height / 2f - 1.dp.toPx())
                 drawRoundRect(
-                    color = Color(0xFF8C55FF).copy(alpha = 0.10f),
+                    color = Color.White.copy(alpha = 0.09f),
+                    topLeft = Offset(1.dp.toPx(), 1.dp.toPx()),
+                    size = androidx.compose.ui.geometry.Size(size.width - 2.dp.toPx(), size.height - 2.dp.toPx()),
                     cornerRadius = radius,
-                    style = Stroke(width = 4.dp.toPx())
+                    style = Stroke(width = 1.dp.toPx())
                 )
                 drawTravelingOutlineGlow(
-                    cornerRadius = (size.height / 2f) - 2.dp.toPx(),
+                    cornerRadius = size.height / 2f - 1.5.dp.toPx(),
                     progress = glowProgress,
-                    inset = 2.dp.toPx(),
-                    glowColor = Color(0xFFD8B9FF)
+                    inset = 1.5.dp.toPx(),
+                    arcFraction = 0.26f,
+                    strokeWidth = 1.4.dp.toPx()
                 )
             }
             .clickable(onClick = onClick)
@@ -2459,9 +2471,25 @@ private fun DetailScreen(
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             item {
+                val heroGlow = rememberInfiniteTransition(label = "hero-cover-glow")
+                val heroGlowProgress by heroGlow.animateFloat(
+                    initialValue = 0f, targetValue = 1f,
+                    animationSpec = infiniteRepeatable(tween(5200, easing = LinearEasing)),
+                    label = "hero-cover-glow-progress"
+                )
                 Box(
                     Modifier.fillMaxWidth().height(340.dp)
                         .background(Color(0xFF17151C))
+                        .drawWithContent {
+                            drawContent()
+                            drawTravelingOutlineGlow(
+                                cornerRadius = 28.dp.toPx(),
+                                progress = heroGlowProgress,
+                                inset = 9.dp.toPx(),
+                                arcFraction = 0.2f,
+                                strokeWidth = 1.6.dp.toPx()
+                            )
+                        }
                 ) {
                     SeriesCover(series, Modifier.fillMaxSize())
                     Box(
