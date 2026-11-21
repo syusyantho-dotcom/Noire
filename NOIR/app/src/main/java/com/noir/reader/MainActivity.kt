@@ -16,6 +16,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
@@ -3980,188 +3982,155 @@ private fun EmptyState(title: String, message: String) {
 
 
 private data class NoirWelcomePage(
-    val eyebrow: String,
-    val title: String,
-    val description: String,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
-    val tag: String
+    val lead: String,
+    val accent: String,
+    val description: String
 )
+
+private data class NoirWelcomePalette(val main: Color, val light: Color, val deep: Color, val accent: Color)
 
 @Composable
 private fun NoirWelcomeWalkthrough(onFinish: () -> Unit) {
     val pages = remember {
         listOf(
-            NoirWelcomePage("WELCOME TO YOUR NEXT ESCAPE", "Every story begins here.", "Step into a universe of manga, manhwa and unforgettable worlds. Your next favourite story is waiting.", Icons.Rounded.AutoStories, "DISCOVER YOUR NEXT WORLD"),
-            NoirWelcomePage("A WORLD OF STORIES", "Find your next obsession.", "Explore community sources, discover new series and follow the stories that keep you turning pages.", Icons.Rounded.Explore, "MANGA  /  MANHWA  /  MORE"),
-            NoirWelcomePage("MADE FOR YOUR PACE", "Read without limits.", "Choose your reading direction, make every page yours and continue right where you left off.", Icons.Rounded.MenuBook, "YOUR READING. YOUR RULES."),
-            NoirWelcomePage("YOUR LIBRARY, ALWAYS", "Keep stories close.", "Save favourites, track your progress and download supported chapters for offline reading.", Icons.Rounded.Bookmarks, "SAVE  /  TRACK  /  READ")
+            NoirWelcomePage("Every story\nbegins ", "here.", "Step into a universe of manga, manhwa and unforgettable worlds. Your next favourite story is waiting."),
+            NoirWelcomePage("Find your\nnext ", "obsession.", "Explore community sources, discover new series and follow the stories that keep you turning pages."),
+            NoirWelcomePage("Read without\n", "limits.", "Choose your reading direction, make every page yours and continue right where you left off."),
+            NoirWelcomePage("Keep stories\n", "close.", "Save favourites, track your progress and download supported chapters for offline reading.")
         )
     }
-    val palettes = listOf(
-        Triple(Color(0xFF1B74FF), Color(0xFF55D5FF), Color(0xFF6B43C8)),
-        Triple(Color(0xFF7B3DDA), Color(0xFFED7BBD), Color(0xFF2866C9)),
-        Triple(Color(0xFF00A9A1), Color(0xFF72E0C5), Color(0xFF356BCB)),
-        Triple(Color(0xFFB45BFF), Color(0xFF6C9BFF), Color(0xFFDB6B9A))
-    )
+    val palettes = remember {
+        listOf(
+            NoirWelcomePalette(Color(0xFF2B6BFF), Color(0xFFC3D3FF), Color(0xFF1B3FA8), Color(0xFF2F7BFF)),
+            NoirWelcomePalette(Color(0xFFFF4B2B), Color(0xFFFFB03A), Color(0xFFC22A12), Color(0xFFFF5238)),
+            NoirWelcomePalette(Color(0xFF00B3A6), Color(0xFF9DF3D6), Color(0xFF0B5E8C), Color(0xFF2DD4BF)),
+            NoirWelcomePalette(Color(0xFF9B4DFF), Color(0xFFFF93CC), Color(0xFF4B2BB0), Color(0xFFB878FF))
+        )
+    }
     var page by remember { mutableIntStateOf(0) }
     val current = pages[page]
     val isLast = page == pages.lastIndex
-    val palette = palettes[page]
+    val target = palettes[page]
+    val mainColor by animateColorAsState(target.main, tween(800), label = "welcome-main")
+    val lightColor by animateColorAsState(target.light, tween(800), label = "welcome-light")
+    val deepColor by animateColorAsState(target.deep, tween(800), label = "welcome-deep")
+    val accentColor by animateColorAsState(target.accent, tween(800), label = "welcome-accent")
+
+    // Angles are whole multiples of one full turn, so every loop is seamless (no jump on repeat).
     val wave = rememberInfiniteTransition(label = "noir-walkthrough-wave")
-    val wavePosition by wave.animateFloat(
-        initialValue = -0.18f,
-        targetValue = 1.18f,
-        animationSpec = infiniteRepeatable(tween(7200, easing = LinearEasing)),
-        label = "noir-wave-position"
+    val phase by wave.animateFloat(
+        initialValue = 0f,
+        targetValue = (2 * Math.PI).toFloat(),
+        animationSpec = infiniteRepeatable(tween(16000, easing = LinearEasing)),
+        label = "noir-wave-phase"
     )
-    val counterWave by wave.animateFloat(
-        initialValue = 1.12f,
-        targetValue = -0.12f,
-        animationSpec = infiniteRepeatable(tween(9100, easing = LinearEasing)),
-        label = "noir-counter-wave"
-    )
-    val glowPulse by wave.animateFloat(
-        initialValue = 0.72f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(2600), repeatMode = androidx.compose.animation.core.RepeatMode.Reverse),
-        label = "noir-glow-pulse"
-    )
+    val base = Color(0xFF04050A)
 
-    Column(
-        Modifier.fillMaxSize().background(Color(0xFF050609)).statusBarsPadding()
-            .navigationBarsPadding().padding(horizontal = 24.dp, vertical = 13.dp)
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Box(Modifier.fillMaxSize().background(base)) {
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            val a = phase
+            fun blob(color: Color, alpha: Float, cx: Float, cy: Float, radius: Float) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(color.copy(alpha = alpha), color.copy(alpha = alpha * .55f), Color.Transparent),
+                        center = Offset(cx, cy),
+                        radius = radius
+                    ),
+                    radius = radius,
+                    center = Offset(cx, cy)
+                )
+            }
+            blob(mainColor, .95f, w * (.30f + .22f * kotlin.math.cos(a + 1f)), h * (.26f + .05f * kotlin.math.sin(a)), w * 1.08f)
+            blob(mainColor, .80f, w * (.62f + .26f * kotlin.math.sin(a * 2f + 2f)), h * (.17f + .04f * kotlin.math.cos(a + 2f)), w * .95f)
+            blob(deepColor, .85f, w * (.50f + .30f * kotlin.math.sin(a + 3.4f)), h * (.40f + .05f * kotlin.math.cos(a * 2f)), w * .95f)
+            blob(lightColor, .95f, w * (.78f + .18f * kotlin.math.sin(a + .6f)), h * (.07f + .035f * kotlin.math.cos(a * 2f + 1f)), w * .78f)
+            // Fade the colour into black toward the copy area.
+            drawRect(
+                brush = Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    .40f to Color.Transparent,
+                    .64f to base.copy(alpha = .96f),
+                    1f to base
+                )
+            )
+        }
+
+        Column(
+            Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 28.dp).padding(bottom = 18.dp),
+            verticalArrangement = Arrangement.Bottom
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                NoirLogoMark(27.dp)
-                Text("NOIR", color = White, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.5.sp)
+                NoirLogoMark(24.dp)
+                Text("NOIR", color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 3.sp)
             }
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = onFinish) {
-                Text("SKIP  ›", color = Color(0xFFB8B9C4), fontSize = 10.sp, letterSpacing = 1.2.sp)
-            }
-        }
-
-        Spacer(Modifier.height(13.dp))
-
-        Box(
-            Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(30.dp))
-                .background(Color(0xFF0A0D16))
-                .border(1.dp, Color.White.copy(alpha = .13f), RoundedCornerShape(30.dp))
-        ) {
-            Canvas(Modifier.fillMaxSize()) {
-                val w = size.width
-                val h = size.height
-                drawRect(
-                    brush = Brush.linearGradient(
-                        colors = listOf(Color(0xFF07101F), Color(0xFF11101B), Color(0xFF09090F)),
-                        start = Offset(0f, 0f),
-                        end = Offset(w, h)
+            Spacer(Modifier.height(18.dp))
+            androidx.compose.animation.AnimatedContent(
+                targetState = page,
+                transitionSpec = {
+                    (fadeIn(tween(420)) + androidx.compose.animation.slideInVertically(tween(420)) { it / 10 }) togetherWith
+                        fadeOut(tween(160))
+                },
+                label = "welcome-copy"
+            ) { index ->
+                val item = pages[index]
+                Column {
+                    Text(
+                        androidx.compose.ui.text.buildAnnotatedString {
+                            append(item.lead)
+                            withStyle(androidx.compose.ui.text.SpanStyle(color = accentColor)) { append(item.accent) }
+                        },
+                        color = Color.White, fontSize = 36.sp, lineHeight = 42.sp,
+                        fontWeight = FontWeight.Medium, letterSpacing = (-.8).sp
                     )
-                )
-                val firstCenter = Offset(w * wavePosition, h * .34f)
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(palette.first.copy(alpha = .82f * glowPulse), palette.first.copy(alpha = .30f), Color.Transparent),
-                        center = firstCenter,
-                        radius = size.minDimension * .78f
-                    ),
-                    radius = size.minDimension * .78f,
-                    center = firstCenter
-                )
-                val secondCenter = Offset(w * counterWave, h * .60f)
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(palette.second.copy(alpha = .62f), palette.third.copy(alpha = .18f), Color.Transparent),
-                        center = secondCenter,
-                        radius = size.minDimension * .68f
-                    ),
-                    radius = size.minDimension * .68f,
-                    center = secondCenter
-                )
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(palette.third.copy(alpha = .25f), Color.Transparent),
-                        center = Offset(w * .5f, h * .92f),
-                        radius = size.minDimension * .65f
-                    ),
-                    radius = size.minDimension * .65f,
-                    center = Offset(w * .5f, h * .92f)
-                )
-            }
-            Column(
-                Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 23.dp),
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text("NOIR / THE READING UNIVERSE", color = Color.White.copy(alpha = .78f), fontSize = 8.sp, letterSpacing = 2.2.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text("STORIES MOVE YOU.", color = Color.White.copy(alpha = .68f), fontSize = 8.sp, letterSpacing = 2.4.sp)
-                }
-                key(page) {
-                    Column(
-                        Modifier.fillMaxWidth().animateContentSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Box(
-                            Modifier.size(142.dp).clip(RoundedCornerShape(38.dp))
-                                .background(Brush.linearGradient(listOf(Color.White.copy(alpha = .19f), palette.first.copy(alpha = .25f), Color(0xFF080A12).copy(alpha = .78f))))
-                                .border(1.dp, Color.White.copy(alpha = .24f), RoundedCornerShape(38.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(Modifier.size(116.dp).clip(CircleShape).background(palette.second.copy(alpha = .12f)), contentAlignment = Alignment.Center) {
-                                Icon(current.icon, null, tint = Color.White, modifier = Modifier.size(62.dp))
-                            }
-                        }
-                        Spacer(Modifier.height(19.dp))
-                        Text(current.tag, color = Color.White.copy(alpha = .86f), fontSize = 8.sp, letterSpacing = 1.9.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-                Column {
-                    Text(current.eyebrow, color = Color.White.copy(alpha = .72f), fontSize = 8.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(9.dp))
-                    key("copy-$page") {
-                        Column {
-                            Text(current.title, color = Color.White, fontSize = 29.sp, lineHeight = 35.sp, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.height(9.dp))
-                            Text(current.description, color = Color.White.copy(alpha = .75f), fontSize = 12.sp, lineHeight = 19.sp)
-                        }
-                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(item.description, color = Color.White.copy(alpha = .62f), fontSize = 14.sp, lineHeight = 21.sp)
                 }
             }
-        }
-
-        Spacer(Modifier.height(21.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                 pages.indices.forEach { index ->
+                    val active = index == page
+                    val width by animateDpAsState(if (active) 26.dp else 5.dp, tween(300), label = "welcome-dot")
                     Box(
-                        Modifier.width(if (index == page) 25.dp else 6.dp).height(5.dp)
-                            .clip(CircleShape)
-                            .background(if (index == page) palette.second else Color(0xFF454650))
+                        Modifier.width(width).height(5.dp).clip(CircleShape)
+                            .background(if (active) accentColor else Color.White.copy(alpha = .28f))
                     )
                 }
             }
-            Spacer(Modifier.weight(1f))
-            Text("${(page + 1).toString().padStart(2, '0')}  /  ${pages.size.toString().padStart(2, '0')}", color = Color(0xFF858691), fontSize = 9.sp, letterSpacing = 1.3.sp)
+            Spacer(Modifier.height(26.dp))
+            Box(
+                Modifier.fillMaxWidth().height(54.dp).clip(CircleShape)
+                    .background(accentColor)
+                    .drawBehind {
+                        val cx = size.width * (.5f + .30f * kotlin.math.sin(phase * 2f))
+                        val radius = size.width * .34f
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                listOf(Color.White.copy(alpha = .62f), Color.White.copy(alpha = .16f), Color.Transparent),
+                                center = Offset(cx, size.height / 2f), radius = radius
+                            ),
+                            radius = radius, center = Offset(cx, size.height / 2f)
+                        )
+                    }
+                    .clickable { if (isLast) onFinish() else page += 1 },
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text(if (isLast) "Enter NOIR" else "Next", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Icon(Icons.Rounded.ArrowForward, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.fillMaxWidth().height(44.dp), contentAlignment = Alignment.Center) {
+                if (isLast) {
+                    Text("Your next chapter starts now.", color = Color.White.copy(alpha = .5f), fontSize = 12.sp)
+                } else {
+                    TextButton(onClick = onFinish) { Text("Skip", color = Color.White, fontSize = 15.sp) }
+                }
+            }
         }
-        Spacer(Modifier.height(18.dp))
-        Button(
-            onClick = { if (isLast) onFinish() else page += 1 },
-            modifier = Modifier.fillMaxWidth().height(55.dp),
-            shape = RoundedCornerShape(18.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = palette.first, contentColor = Color.White)
-        ) {
-            Text(if (isLast) "ENTER NOIR" else "CONTINUE", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-            Spacer(Modifier.width(10.dp))
-            Icon(Icons.Rounded.ArrowForward, null, modifier = Modifier.size(17.dp))
-        }
-        Spacer(Modifier.height(9.dp))
-        Text(
-            if (isLast) "Your next chapter starts now." else "A universe between the pages.",
-            color = Color(0xFF777984), fontSize = 9.sp, letterSpacing = .6.sp,
-            modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center
-        )
     }
 }
 
