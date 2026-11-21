@@ -1826,6 +1826,150 @@ private fun HomeFeatureRow(series: Series, onClick: () -> Unit) {
 }
 
 @Composable
+private fun ReleaseRadarScreen(
+    saved: List<Series>,
+    catalogue: List<Series>,
+    results: List<RadarSeriesResult>,
+    loading: Boolean,
+    lastChecked: Long,
+    error: String?,
+    onRefresh: () -> Unit,
+    onOpen: (Series) -> Unit,
+    onBack: () -> Unit
+) {
+    val followedKeys = saved.map { "${it.sourceId}:${it.id}" }.toSet()
+    val likedTags = saved.flatMap { it.tags }.map { it.lowercase() }.toSet()
+    val recommendations = remember(catalogue, followedKeys, likedTags) {
+        catalogue.asSequence()
+            .filter { "${it.sourceId}:${it.id}" !in followedKeys }
+            .distinctBy { "${it.sourceId}:${it.id}" }
+            .map { series ->
+                val overlap = series.tags.count { it.lowercase() in likedTags }
+                series to overlap
+            }
+            .sortedWith(compareByDescending<Pair<Series, Int>> { it.second }.thenBy { it.first.title })
+            .take(8)
+            .toList()
+    }
+    val freshCount = results.sumOf { it.newChapters.size }
+    val checkedLabel = if (lastChecked > 0L) {
+        java.text.SimpleDateFormat("MMM d · HH:mm", java.util.Locale.getDefault()).format(java.util.Date(lastChecked))
+    } else "NOT CHECKED YET"
+
+    Column(Modifier.fillMaxSize().background(Black).statusBarsPadding()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, null, tint = White) }
+            Column(Modifier.weight(1f)) {
+                Text("NOIR / FOLLOWING", color = Muted, fontSize = 8.sp, letterSpacing = 1.8.sp)
+                Text("Release Radar", color = White, fontSize = 25.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Icon(Icons.Rounded.NotificationsActive, null, tint = Color(0xFFD6C5F2), modifier = Modifier.padding(end = 8.dp))
+        }
+        LazyColumn(
+            Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 26.dp),
+            verticalArrangement = Arrangement.spacedBy(13.dp)
+        ) {
+            item {
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(23.dp))
+                        .background(Brush.linearGradient(listOf(Color(0xFF30243D), Color(0xFF17141D), Color(0xFF101015))))
+                        .border(1.dp, Color(0xFF57446B), RoundedCornerShape(23.dp)).padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(11.dp)
+                ) {
+                    Text("YOUR SERIES, IN SYNC", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(freshCount.toString(), color = White, fontSize = 42.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.width(9.dp))
+                        Text("NEW CHAPTERS FOUND", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp, modifier = Modifier.padding(bottom = 8.dp))
+                    }
+                    Text("${saved.size} followed series · Last check: $checkedLabel", color = Muted, fontSize = 9.sp)
+                    Button(
+                        onClick = onRefresh,
+                        enabled = !loading && saved.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(15.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD6C5F2), contentColor = Color(0xFF17121F))
+                    ) {
+                        if (loading) {
+                            CircularProgressIndicator(Modifier.size(16.dp), color = Color(0xFF17121F), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(9.dp))
+                            Text("CHECKING YOUR SOURCES", fontSize = 9.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold)
+                        } else {
+                            Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("CHECK FOR NEW CHAPTERS", fontSize = 9.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Text("Checks each followed title against its source when you ask. It does not run background polling.", color = Color(0xFFAAA2B4), fontSize = 8.sp, lineHeight = 13.sp)
+                }
+            }
+            if (error != null) item {
+                Text(error, color = Color(0xFFFFB4AB), fontSize = 10.sp, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF321C20)).padding(12.dp))
+            }
+            if (saved.isEmpty()) item {
+                EmptyState("Your radar is quiet", "Save a few series first. NOIR will compare their latest chapter lists when you run a check.")
+            }
+            if (results.isNotEmpty()) {
+                item {
+                    Text("FOLLOWED SERIES", color = Silver, fontSize = 9.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold)
+                }
+                items(results, key = { "radar-${it.series.sourceId}-${it.series.id}" }) { result ->
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp))
+                            .background(Panel).border(1.dp, Color(0xFF302C35), RoundedCornerShape(17.dp))
+                            .clickable { onOpen(result.series) }.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(Modifier.size(52.dp, 68.dp).clip(RoundedCornerShape(9.dp)).background(Color(0xFF28232F))) {
+                            SeriesCover(result.series, Modifier.fillMaxSize())
+                        }
+                        Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(result.series.title, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(result.series.sourceName.uppercase(), color = Muted, fontSize = 7.sp, letterSpacing = 1.sp)
+                            when {
+                                result.error != null -> Text("SOURCE UNAVAILABLE · ${result.error}", color = Color(0xFFFFB4AB), fontSize = 8.sp, maxLines = 2)
+                                result.newChapters.isNotEmpty() -> Text("${result.newChapters.size} NEW · ${result.newChapters.take(2).joinToString { it.name }}", color = Color(0xFFD6C5F2), fontSize = 8.sp, maxLines = 2)
+                                result.chapters.isNotEmpty() -> Text("UP TO DATE · ${result.chapters.size} CHAPTERS", color = Color(0xFF9ECAA9), fontSize = 8.sp)
+                                else -> Text("NO CHAPTER DATA RETURNED", color = Muted, fontSize = 8.sp)
+                            }
+                        }
+                        Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
+                    }
+                }
+            }
+            if (recommendations.isNotEmpty()) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("PICKS FOR YOUR NEXT READ", color = Silver, fontSize = 9.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold)
+                        Text(if (likedTags.isNotEmpty()) "Ranked by genre overlap with your followed titles." else "Explore more from the catalogue. Genre matching improves as source metadata becomes available.", color = Muted, fontSize = 8.sp)
+                    }
+                }
+                items(recommendations, key = { "radar-pick-${it.first.sourceId}-${it.first.id}" }) { (series, overlap) ->
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Color(0xFF121216))
+                            .clickable { onOpen(series) }.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(Modifier.size(45.dp, 59.dp).clip(RoundedCornerShape(7.dp)).background(Panel)) {
+                            SeriesCover(series, Modifier.fillMaxSize())
+                        }
+                        Column(Modifier.weight(1f).padding(start = 11.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(series.title, color = White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(if (overlap > 0) "$overlap SHARED GENRES" else series.sourceName.uppercase(), color = Color(0xFFBFAED3), fontSize = 7.sp, letterSpacing = .8.sp)
+                        }
+                        Icon(Icons.Rounded.ArrowForward, null, tint = Muted, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, savedCount: Int, trackedCount: Int, averageProgress: Int, latestTitle: String, activityLabel: String, onRadar: () -> Unit, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit) {
     var showMatureConfirmation by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -1869,7 +2013,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
             }
         }
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Brush.linearGradient(listOf(Color(0xFF252033), Color(0xFF17151D)))).border(1.dp, Color(0xFF40344F), RoundedCornerShape(15.dp)).clickable(onClick = onRadar).padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.Radar, null, tint = Color(0xFFD6C5F2))
+            Icon(Icons.Rounded.NotificationsActive, null, tint = Color(0xFFD6C5F2))
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
                 Text("Release Radar", color = White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Text("Check followed series for newly released chapters", color = Muted, fontSize = 9.sp)
