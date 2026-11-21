@@ -3140,7 +3140,7 @@ private fun LibraryScreen(
 }
 
 @Composable
-private fun BottomNav(tab: String, onTab: (String) -> Unit) {
+internal fun BottomNav(tab: String, onTab: (String) -> Unit) {
     val destinations = listOf(
         "Home" to Icons.Rounded.Home,
         "Discover" to Icons.Rounded.Explore,
