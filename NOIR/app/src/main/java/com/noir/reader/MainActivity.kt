@@ -40,6 +40,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -1435,7 +1437,8 @@ private fun HomeFeatureRow(series: Series, onClick: () -> Unit) {
 @Composable
 private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, savedCount: Int, trackedCount: Int, averageProgress: Int, latestTitle: String, activityLabel: String, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit) {
     var showMatureConfirmation by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+      Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(24.dp))
         Text("NOIR / PERSONAL SPACE", color = Muted, fontSize = 10.sp, letterSpacing = 2.sp)
         Text("Profile", color = White, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
@@ -1501,8 +1504,8 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
         }
         Spacer(Modifier.height(14.dp))
         Text("Settings are saved on this device. Only implemented settings are shown here.", color = Muted, fontSize = 10.sp, lineHeight = 16.sp)
-        Spacer(Modifier.weight(1f))
-        BottomNav("Profile", onTab)
+    }
+      BottomNav("Profile", onTab)
     }
     if (showMatureConfirmation) AlertDialog(
         onDismissRequest = { showMatureConfirmation = false },
@@ -2043,10 +2046,14 @@ private fun ReaderScreen(
     // Keep nearby pages in Coil's cache so fast scrolling is less likely to show blanks.
     LaunchedEffect(currentPage, pages, isPaged) {
         if (pages.isNotEmpty()) {
-            val ahead = if (isPaged) 2 else 3
+            // Keep a wider reading buffer warm, especially for long webtoon strips.
+            // This follows Kotatsu's page-loader approach: prepare nearby pages before
+            // the user reaches them instead of making the scroll wait on network fetches.
+            val ahead = if (isPaged) 3 else 5
+            val behind = if (isPaged) 1 else 2
             val indices = buildList {
                 for (index in (currentPage + 1)..minOf(pages.lastIndex, currentPage + ahead)) add(index)
-                if (currentPage > 0) add(currentPage - 1)
+                for (index in (currentPage - behind) until currentPage) if (index >= 0) add(index)
             }.distinct()
             indices.forEach { index ->
                 imageLoader.enqueue(ImageRequest.Builder(context).data(pages[index]).build())
@@ -2075,7 +2082,7 @@ private fun ReaderScreen(
     val readerFlingBehavior = remember(baseFlingBehavior) {
         object : androidx.compose.foundation.gestures.FlingBehavior {
             override suspend fun androidx.compose.foundation.gestures.ScrollScope.performFling(initialVelocity: Float): Float {
-                return with(baseFlingBehavior) { performFling(initialVelocity * 1.18f) }
+                return with(baseFlingBehavior) { performFling(initialVelocity * 0.92f) }
             }
         }
     }
