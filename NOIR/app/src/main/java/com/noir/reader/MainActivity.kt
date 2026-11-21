@@ -1018,6 +1018,7 @@ private fun NoirApp() {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CatalogueScreen(
     tab: String, query: String, onQuery: (String) -> Unit, catalogue: List<Series>,
