@@ -1618,10 +1618,13 @@ private fun DetailScreen(
     var chapterQuery by remember(series.id) { mutableStateOf("") }
     var chapterLanguage by remember(series.id) { mutableStateOf("ALL") }
     var chapterSort by remember(series.id) { mutableStateOf("SOURCE ORDER") }
+    var showBookmarkedOnly by remember(series.id) { mutableStateOf(false) }
+    val bookmarkedCount = chapters.count { "${series.sourceId}:${it.id}" in bookmarkedChapterKeys }
     val availableChapterLanguages = remember(chapters) { chapters.map { it.language }.filter { it.isNotBlank() }.distinct().sorted() }
-    val visibleChapters = remember(chapters, chapterQuery, chapterLanguage, chapterSort) {
+    val visibleChapters = remember(chapters, chapterQuery, chapterLanguage, chapterSort, showBookmarkedOnly, bookmarkedChapterKeys) {
         val matching = chapters.filter { chapter ->
-            (chapterLanguage == "ALL" || chapter.language.equals(chapterLanguage, ignoreCase = true)) &&
+            (!showBookmarkedOnly || "${series.sourceId}:${chapter.id}" in bookmarkedChapterKeys) &&
+                (chapterLanguage == "ALL" || chapter.language.equals(chapterLanguage, ignoreCase = true)) &&
                 (chapterQuery.isBlank() || chapter.name.contains(chapterQuery, ignoreCase = true) ||
                     chapter.number.contains(chapterQuery, ignoreCase = true) || chapter.language.contains(chapterQuery, ignoreCase = true))
         }
@@ -1827,6 +1830,22 @@ private fun DetailScreen(
                             }
                         }
                     }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.clip(RoundedCornerShape(20.dp))
+                            .background(if (showBookmarkedOnly) Color(0xFF342B3D) else Color(0xFF151419))
+                            .border(1.dp, if (showBookmarkedOnly) Color(0xFF665572) else Color(0xFF302C35), RoundedCornerShape(20.dp))
+                            .clickable { showBookmarkedOnly = !showBookmarkedOnly }
+                            .padding(horizontal = 11.dp, vertical = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Rounded.Bookmark, null,
+                                    tint = if (showBookmarkedOnly) Color(0xFFE9DFF2) else Muted,
+                                    modifier = Modifier.size(12.dp))
+                                Text("BOOKMARKED ONLY  ·  $bookmarkedCount",
+                                    color = if (showBookmarkedOnly) Color(0xFFE9DFF2) else Muted,
+                                    fontSize = 7.sp, letterSpacing = .55.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
                     Text("${visibleChapters.size} OF ${chapters.size} CHAPTERS", color = Color(0xFF77717F), fontSize = 7.sp, letterSpacing = 1.sp)
                 }
             }
@@ -1839,7 +1858,12 @@ private fun DetailScreen(
             if (!loading && error == null && chapters.isEmpty()) {
                 item { EmptyState("No chapters available", "There are no English or Indonesian chapters listed for this series yet.") }
             } else if (!loading && error == null && visibleChapters.isEmpty()) {
-                item { EmptyState("No matching chapters", "Try a different search or language filter.") }
+                item {
+                    EmptyState(
+                        if (showBookmarkedOnly) "No bookmarked chapters" else "No matching chapters",
+                        if (showBookmarkedOnly) "Bookmark a chapter with the icon beside it, then find it here." else "Try a different search or language filter."
+                    )
+                }
             }
             items(visibleChapters, key = { it.id }) { chapter ->
                 Row(
