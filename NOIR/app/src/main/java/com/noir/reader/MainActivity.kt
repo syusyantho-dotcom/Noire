@@ -251,7 +251,7 @@ private fun NoirApp() {
     SideEffect { MatureContentAccess.enabled = matureContentEnabled }
     var showAbout by remember { mutableStateOf(false) }
     var showWhatsNew by remember { mutableStateOf(false) }
-    val whatsNewVersion = "1.5.0"
+    val whatsNewVersion = "1.6.0"
     val shouldShowWhatsNew = remember { prefs.getString("seen_whats_new", "") != whatsNewVersion }
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Series?>(null) }
@@ -310,7 +310,11 @@ private fun NoirApp() {
                             sourceId = item.optString("sourceId"),
                             sourceName = item.optString("sourceName"),
                             sourceUrl = item.optString("sourceUrl").takeIf { it.isNotBlank() },
-                            sourcePublicUrl = item.optString("sourcePublicUrl").takeIf { it.isNotBlank() }
+                            sourcePublicUrl = item.optString("sourcePublicUrl").takeIf { it.isNotBlank() },
+                            tags = item.optJSONArray("tags")?.let { array -> (0 until array.length()).map { index -> array.optString(index) } }.orEmpty(),
+                            status = item.optString("status").takeIf { it.isNotBlank() },
+                            originalLanguage = item.optString("originalLanguage").takeIf { it.isNotBlank() },
+                            year = item.optInt("year", 0).takeIf { it > 0 }
                         )
                     )
                 }
@@ -330,6 +334,10 @@ private fun NoirApp() {
                     .put("sourceName", item.sourceName)
                     .put("sourceUrl", item.sourceUrl ?: "")
                     .put("sourcePublicUrl", item.sourcePublicUrl ?: "")
+                    .put("tags", JSONArray(item.tags))
+                    .put("status", item.status ?: "")
+                    .put("originalLanguage", item.originalLanguage ?: "")
+                    .put("year", item.year ?: 0)
             )
         }
         prefs.edit().putString("saved_series", stored.toString()).apply()
@@ -348,7 +356,11 @@ private fun NoirApp() {
                         item.optString("sourceId"),
                         item.optString("sourceName"),
                         item.optString("sourceUrl").takeIf { it.isNotBlank() },
-                        item.optString("sourcePublicUrl").takeIf { it.isNotBlank() }
+                        item.optString("sourcePublicUrl").takeIf { it.isNotBlank() },
+                        tags = item.optJSONArray("tags")?.let { array -> (0 until array.length()).map { index -> array.optString(index) } }.orEmpty(),
+                        status = item.optString("status").takeIf { it.isNotBlank() },
+                        originalLanguage = item.optString("originalLanguage").takeIf { it.isNotBlank() },
+                        year = item.optInt("year", 0).takeIf { it > 0 }
                     ))
                 }
             }
@@ -359,7 +371,9 @@ private fun NoirApp() {
         recentlyRead.take(30).forEach { item ->
             stored.put(JSONObject().put("id", item.id).put("title", item.title).put("description", item.description)
                 .put("coverUrl", item.coverUrl ?: "").put("sourceId", item.sourceId).put("sourceName", item.sourceName)
-                .put("sourceUrl", item.sourceUrl ?: "").put("sourcePublicUrl", item.sourcePublicUrl ?: ""))
+                .put("sourceUrl", item.sourceUrl ?: "").put("sourcePublicUrl", item.sourcePublicUrl ?: "")
+                .put("tags", JSONArray(item.tags)).put("status", item.status ?: "")
+                .put("originalLanguage", item.originalLanguage ?: "").put("year", item.year ?: 0))
         }
         prefs.edit().putString("recent_series", stored.toString()).apply()
     }
@@ -897,7 +911,7 @@ private fun NoirApp() {
             if (showAbout) AlertDialog(
                 onDismissRequest = { showAbout = false },
                 title = { Text("About NOIR", color = White) },
-                text = { Text("NOIR 1.5.0 includes the Kotatsu community parser library under GPL-3.0. NO WARRANTY. You may copy and modify this app under that license. Full license and corresponding source: github.com/syusyantho-dotcom/Noire (NOIR/LICENSE and THIRD_PARTY_NOTICES.md).", color = Muted) },
+                text = { Text("NOIR 1.6.0 adds Release Radar and smart picks, alongside the Kotatsu community parser library under GPL-3.0. NO WARRANTY. You may copy and modify this app under that license. Full license and corresponding source: github.com/syusyantho-dotcom/Noire (NOIR/LICENSE and THIRD_PARTY_NOTICES.md).", color = Muted) },
                 confirmButton = { TextButton(onClick = { showAbout = false }) { Text("CLOSE", color = Silver) } },
                 containerColor = Panel
             )
@@ -1984,7 +1998,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
                 Text("NOIR READER", color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text("Your personal reading space", color = Muted, fontSize = 10.sp)
             }
-            Text("1.4.0", color = Silver, fontSize = 9.sp)
+            Text("1.6.0", color = Silver, fontSize = 9.sp)
         }
         Spacer(Modifier.height(18.dp))
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(21.dp))
@@ -2038,7 +2052,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Panel).clickable(onClick = onWhatsNew).padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.AutoAwesome, null, tint = Color(0xFFD6C5F2))
             Text("What’s New in NOIR", color = White, fontSize = 13.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
-            Text("1.4.0", color = Color(0xFFD6C5F2), fontSize = 9.sp)
+            Text("1.6.0", color = Color(0xFFD6C5F2), fontSize = 9.sp)
             Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
         }
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Panel).clickable(onClick = onAbout).padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
