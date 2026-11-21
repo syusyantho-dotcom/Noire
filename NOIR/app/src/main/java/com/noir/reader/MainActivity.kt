@@ -1564,6 +1564,22 @@ private fun DetailScreen(
     onChapter: (Chapter) -> Unit, onDownloadChapter: (Chapter) -> Unit
 ) {
     var synopsisExpanded by remember(series.id) { mutableStateOf(false) }
+    var chapterQuery by remember(series.id) { mutableStateOf("") }
+    var chapterLanguage by remember(series.id) { mutableStateOf("ALL") }
+    var chapterSort by remember(series.id) { mutableStateOf("SOURCE ORDER") }
+    val availableChapterLanguages = remember(chapters) { chapters.map { it.language }.filter { it.isNotBlank() }.distinct().sorted() }
+    val visibleChapters = remember(chapters, chapterQuery, chapterLanguage, chapterSort) {
+        val matching = chapters.filter { chapter ->
+            (chapterLanguage == "ALL" || chapter.language.equals(chapterLanguage, ignoreCase = true)) &&
+                (chapterQuery.isBlank() || chapter.name.contains(chapterQuery, ignoreCase = true) ||
+                    chapter.number.contains(chapterQuery, ignoreCase = true) || chapter.language.contains(chapterQuery, ignoreCase = true))
+        }
+        when (chapterSort) {
+            "NEWEST" -> matching.sortedWith(compareByDescending<Chapter> { it.sourceUploadDate > 0L }.thenByDescending { it.sourceUploadDate })
+            "OLDEST" -> matching.sortedWith(compareByDescending<Chapter> { it.sourceUploadDate > 0L }.thenBy { it.sourceUploadDate })
+            else -> matching
+        }
+    }
     val synopsis = series.description.ifBlank { "No synopsis is available for this title yet." }
     val synopsisNeedsMore = synopsis.length > 190
     val synopsisText = if (!synopsisExpanded && synopsisNeedsMore) synopsis.take(190).substringBeforeLast(" ") + "…" else synopsis
@@ -1701,6 +1717,47 @@ private fun DetailScreen(
                 }
             }
 
+            item {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                    OutlinedTextField(
+                        value = chapterQuery, onValueChange = { chapterQuery = it }, modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Find a chapter…", color = Muted, fontSize = 11.sp) },
+                        leadingIcon = { Icon(Icons.Rounded.Search, null, tint = Silver, modifier = Modifier.size(18.dp)) },
+                        trailingIcon = { if (chapterQuery.isNotEmpty()) IconButton(onClick = { chapterQuery = "" }) { Icon(Icons.Rounded.Close, null, tint = Muted) } },
+                        singleLine = true, shape = RoundedCornerShape(16.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFF8B7A9B), unfocusedBorderColor = Color(0xFF39333F),
+                            focusedContainerColor = Color(0xCC19171E), unfocusedContainerColor = Color(0xCC141318),
+                            focusedTextColor = White, unfocusedTextColor = White, cursorColor = Silver)
+                    )
+                    if (availableChapterLanguages.size > 1) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            items(listOf("ALL") + availableChapterLanguages) { language ->
+                                val active = chapterLanguage.equals(language, ignoreCase = true)
+                                Box(Modifier.clip(RoundedCornerShape(30.dp))
+                                    .background(if (active) Color(0xFF342B3D) else Color(0xFF151419))
+                                    .border(1.dp, if (active) Color(0xFF665572) else Color(0xFF302C35), RoundedCornerShape(30.dp))
+                                    .clickable { chapterLanguage = language }.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                    Text(if (language == "ALL") "ALL LANGUAGES" else language.uppercase(),
+                                        color = if (active) Color(0xFFE9DFF2) else Muted, fontSize = 8.sp, letterSpacing = .6.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("SORT BY", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
+                        Spacer(Modifier.width(9.dp))
+                        listOf("SOURCE ORDER", "NEWEST", "OLDEST").forEach { mode ->
+                            val active = chapterSort == mode
+                            Box(Modifier.padding(end = 6.dp).clip(RoundedCornerShape(20.dp))
+                                .background(if (active) Color(0xFF30283A) else Color(0xFF151419))
+                                .clickable { chapterSort = mode }.padding(horizontal = 9.dp, vertical = 7.dp)) {
+                                Text(mode, color = if (active) Color(0xFFE4D8F0) else Muted, fontSize = 7.sp, letterSpacing = .45.sp)
+                            }
+                        }
+                    }
+                    Text("${visibleChapters.size} OF ${chapters.size} CHAPTERS", color = Color(0xFF77717F), fontSize = 7.sp, letterSpacing = 1.sp)
+                }
+            }
             if (loading && chapters.isEmpty()) {
                 item { LoadingState("Loading chapters…") }
             }
@@ -1709,8 +1766,10 @@ private fun DetailScreen(
             }
             if (!loading && error == null && chapters.isEmpty()) {
                 item { EmptyState("No chapters available", "There are no English or Indonesian chapters listed for this series yet.") }
+            } else if (!loading && error == null && visibleChapters.isEmpty()) {
+                item { EmptyState("No matching chapters", "Try a different search or language filter.") }
             }
-            items(chapters, key = { it.id }) { chapter ->
+            items(visibleChapters, key = { it.id }) { chapter ->
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 5.dp)
                         .clip(RoundedCornerShape(17.dp))
