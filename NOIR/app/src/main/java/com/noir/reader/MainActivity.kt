@@ -1931,7 +1931,7 @@ private fun ReaderScreen(
                     Text("${(currentPage + 1).coerceAtMost(pages.size)} / ${pages.size}", color = Color(0xFFE8E4EC), fontSize = 9.sp, letterSpacing = .8.sp)
                 }
             }
-            Box(Modifier.align(Alignment.CenterStart).padding(start = 7.dp)) {
+            Column(Modifier.align(Alignment.CenterStart).padding(start = 7.dp)) {
                 AnimatedVisibility(
                     visible = showReaderControls,
                     enter = fadeIn(tween(240)),
