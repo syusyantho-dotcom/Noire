@@ -1821,11 +1821,14 @@ private fun ReaderScreen(
         animationSpec = tween(240, easing = FastOutSlowInEasing),
         label = "noir-reader-controls-fade"
     )
-    var dimAmount by remember { mutableFloatStateOf(0f) }
-    var fitToWidth by remember { mutableStateOf(true) }
-    val readerScope = rememberCoroutineScope()
     val context = LocalContext.current
+    val readerPrefs = remember(context) { context.getSharedPreferences("noir_reader_settings", Context.MODE_PRIVATE) }
+    var dimAmount by remember { mutableFloatStateOf(readerPrefs.getFloat("screen_dim", 0f).coerceIn(0f, 0.65f)) }
+    var fitToWidth by remember { mutableStateOf(readerPrefs.getBoolean("fit_to_width", true)) }
+    val readerScope = rememberCoroutineScope()
     val imageLoader = remember(context) { context.imageLoader }
+    LaunchedEffect(dimAmount) { readerPrefs.edit().putFloat("screen_dim", dimAmount).apply() }
+    LaunchedEffect(fitToWidth) { readerPrefs.edit().putBoolean("fit_to_width", fitToWidth).apply() }
     val isPaged = readerMode == "Horizontal" || readerMode == "Right to left"
     var showChapterCinema by remember(chapter.id) { mutableStateOf(false) }
     val cinemaProgress by animateFloatAsState(
