@@ -2747,6 +2747,7 @@ private fun DetailScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, contentScale: ContentScale, onTap: () -> Unit = {}) {
     var zoom by remember(pageUrl) { mutableFloatStateOf(1f) }
