@@ -166,6 +166,14 @@ private data class ReadingHistoryEntry(
     val updatedAt: Long
 )
 
+private data class RadarSeriesResult(
+    val series: Series,
+    val chapters: List<Chapter>,
+    val newChapters: List<Chapter>,
+    val checkedAt: Long,
+    val error: String? = null
+)
+
 @Composable
 private fun NoirApp() {
     val context = LocalContext.current
@@ -439,6 +447,69 @@ private fun NoirApp() {
                 .put("updatedAt", entry.updatedAt))
         }
         prefs.edit().putString("reading_history", stored.toString()).apply()
+    }
+    var radarResults by remember { mutableStateOf<List<RadarSeriesResult>>(emptyList()) }
+    var radarLoading by remember { mutableStateOf(false) }
+    var radarLastChecked by remember { mutableLongStateOf(prefs.getLong("radar_last_checked", 0L)) }
+    var radarError by remember { mutableStateOf<String?>(null) }
+    val radarSnapshots = remember {
+        mutableStateMapOf<String, Set<String>>().apply {
+            runCatching {
+                val stored = JSONObject(prefs.getString("radar_snapshots", "{}"))
+                stored.keys().forEach { key ->
+                    val ids = stored.optJSONArray(key) ?: return@forEach
+                    put(key, buildSet { for (index in 0 until ids.length()) add(ids.optString(index)) })
+                }
+            }
+        }
+    }
+    LaunchedEffect(radarSnapshots.toMap()) {
+        val stored = JSONObject()
+        radarSnapshots.forEach { (key, ids) ->
+            val array = JSONArray()
+            ids.forEach(array::put)
+            stored.put(key, array)
+        }
+        prefs.edit().putString("radar_snapshots", stored.toString()).apply()
+    }
+    val refreshReleaseRadar: () -> Unit = {
+        if (!radarLoading) {
+            scope.launch {
+                radarLoading = true
+                radarError = null
+                val targets = saved.toList()
+                val collected = mutableListOf<RadarSeriesResult>()
+                try {
+                    targets.chunked(4).forEach { batch ->
+                        val batchResults = coroutineScope {
+                            batch.map { item ->
+                                async {
+                                    val key = "${item.sourceId}:${item.id}"
+                                    try {
+                                        val latest = SourceRegistry.byId(item.sourceId)?.chapters(item).orEmpty()
+                                        val previous = radarSnapshots[key]
+                                        val fresh = if (previous == null) emptyList() else latest.filter { it.id !in previous }
+                                        radarSnapshots[key] = latest.take(60).map { it.id }.toSet()
+                                        RadarSeriesResult(item, latest, fresh, System.currentTimeMillis())
+                                    } catch (e: Exception) {
+                                        RadarSeriesResult(item, emptyList(), emptyList(), System.currentTimeMillis(), e.message ?: "Source unavailable")
+                                    }
+                                }
+                            }.awaitAll()
+                        }
+                        collected.addAll(batchResults)
+                        radarResults = collected.toList()
+                    }
+                    radarLastChecked = System.currentTimeMillis()
+                    prefs.edit().putLong("radar_last_checked", radarLastChecked).apply()
+                    if (targets.isEmpty()) radarError = "Save a few series to start tracking new chapters."
+                } catch (e: Exception) {
+                    radarError = e.message ?: "Could not check followed sources."
+                } finally {
+                    radarLoading = false
+                }
+            }
+        }
     }
     val openSeries: (Series) -> Unit = { item ->
         navigationStack.add(currentNavigationState())
@@ -783,6 +854,17 @@ private fun NoirApp() {
                     onBack = { navigateTab("Profile") },
                     onTab = { navigateTab(it) }
                 )
+                tab == "Radar" -> ReleaseRadarScreen(
+                    saved = saved.toList(),
+                    catalogue = catalogue,
+                    results = radarResults,
+                    loading = radarLoading,
+                    lastChecked = radarLastChecked,
+                    error = radarError,
+                    onRefresh = refreshReleaseRadar,
+                    onOpen = openSeries,
+                    onBack = { navigateTab("Profile") }
+                )
                 tab == "Profile" -> {
                     val latestReading = readingHistory.values.maxByOrNull { it.updatedAt }
                     val latestSeries = (saved.toList() + recentlyRead.toList()).firstOrNull { item ->
@@ -797,6 +879,7 @@ private fun NoirApp() {
                     ProfileScreen(introSound, launchIntro, matureContentEnabled, saved.size,
                         readingHistory.size, averageProgress, latestSeries?.title ?: latestReading?.chapterName.orEmpty(),
                         activityLabel,
+                        onRadar = { navigateTab("Radar") },
                         { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
                         { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
                         { matureContentEnabled = it; prefs.edit().putBoolean("mature_content_18_plus", it).apply() },
@@ -1743,7 +1826,7 @@ private fun HomeFeatureRow(series: Series, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, savedCount: Int, trackedCount: Int, averageProgress: Int, latestTitle: String, activityLabel: String, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit) {
+private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, savedCount: Int, trackedCount: Int, averageProgress: Int, latestTitle: String, activityLabel: String, onRadar: () -> Unit, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit) {
     var showMatureConfirmation by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
       Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
@@ -1785,6 +1868,15 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
                 Text(activityLabel, color = Color(0xFFC9B4E0), fontSize = 8.sp, letterSpacing = .8.sp)
             }
         }
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Brush.linearGradient(listOf(Color(0xFF252033), Color(0xFF17151D)))).border(1.dp, Color(0xFF40344F), RoundedCornerShape(15.dp)).clickable(onClick = onRadar).padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Radar, null, tint = Color(0xFFD6C5F2))
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text("Release Radar", color = White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text("Check followed series for newly released chapters", color = Muted, fontSize = 9.sp)
+            }
+            Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
+        }
+        Spacer(Modifier.height(12.dp))
         Spacer(Modifier.height(22.dp))
         Text("APP SETTINGS", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
