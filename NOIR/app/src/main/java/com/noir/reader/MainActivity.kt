@@ -326,7 +326,7 @@ private fun NoirApp() {
     SideEffect { MatureContentAccess.enabled = matureContentEnabled }
     var showAbout by remember { mutableStateOf(false) }
     var showWhatsNew by remember { mutableStateOf(false) }
-    val whatsNewVersion = "1.6.0"
+    val whatsNewVersion = "1.6.1"
     val shouldShowWhatsNew = remember { prefs.getString("seen_whats_new", "") != whatsNewVersion }
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Series?>(null) }
@@ -993,7 +993,7 @@ private fun NoirApp() {
             if (showAbout) AlertDialog(
                 onDismissRequest = { showAbout = false },
                 title = { Text("About NOIR", color = White) },
-                text = { Text("NOIR 1.6.0 adds Release Radar and smart picks, alongside the Kotatsu community parser library under GPL-3.0. NO WARRANTY. You may copy and modify this app under that license. Full license and corresponding source: github.com/syusyantho-dotcom/Noire (NOIR/LICENSE and THIRD_PARTY_NOTICES.md).", color = Muted) },
+                text = { Text("NOIR 1.6.1 adds scheduled release alerts, weekly reading insights, and portable backup/restore, alongside Release Radar and smart picks. The Kotatsu community parser library is included under GPL-3.0. NO WARRANTY. You may copy and modify this app under that license. Full license and corresponding source: github.com/syusyantho-dotcom/Noire (NOIR/LICENSE and THIRD_PARTY_NOTICES.md).", color = Muted) },
                 confirmButton = { TextButton(onClick = { showAbout = false }) { Text("CLOSE", color = Silver) } },
                 containerColor = Panel
             )
@@ -2119,7 +2119,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
                 Text("NOIR READER", color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text("Your personal reading space", color = Muted, fontSize = 10.sp)
             }
-            Text("1.6.0", color = Silver, fontSize = 9.sp)
+            Text("1.6.1", color = Silver, fontSize = 9.sp)
         }
         Spacer(Modifier.height(18.dp))
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(21.dp))
@@ -2191,7 +2191,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Panel).clickable(onClick = onWhatsNew).padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.AutoAwesome, null, tint = Color(0xFFD6C5F2))
             Text("What’s New in NOIR", color = White, fontSize = 13.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
-            Text("1.6.0", color = Color(0xFFD6C5F2), fontSize = 9.sp)
+            Text("1.6.1", color = Color(0xFFD6C5F2), fontSize = 9.sp)
             Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
         }
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Panel).clickable(onClick = onAbout).padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
