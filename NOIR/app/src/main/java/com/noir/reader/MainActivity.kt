@@ -1866,6 +1866,14 @@ private fun ReaderScreen(
         }
     }
     val currentPage = if (isPaged) pagerState.currentPage else listState.firstVisibleItemIndex
+    var scrubPage by remember { mutableFloatStateOf(initialPage.coerceAtLeast(0).toFloat()) }
+    LaunchedEffect(currentPage) { scrubPage = currentPage.toFloat() }
+    val jumpToPage: (Int) -> Unit = { page ->
+        if (pages.isNotEmpty()) readerScope.launch {
+            val target = page.coerceIn(0, pages.lastIndex)
+            if (isPaged) pagerState.animateScrollToPage(target) else listState.animateScrollToItem(target)
+        }
+    }
 
     // Keep nearby pages in Coil's cache so fast scrolling is less likely to show blanks.
     LaunchedEffect(currentPage, pages, isPaged) {
@@ -1959,6 +1967,30 @@ private fun ReaderScreen(
                     .background(Color(0xB51A1920)).border(1.dp, Color(0x557F788B), RoundedCornerShape(30.dp))
                     .padding(horizontal = 11.dp, vertical = 7.dp)) {
                     Text("${(currentPage + 1).coerceAtMost(pages.size)} / ${pages.size}", color = Color(0xFFE8E4EC), fontSize = 9.sp, letterSpacing = .8.sp)
+                }
+            }
+            if (pages.size > 1 && showReaderControls && !showChapterCinema) {
+                Column(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 22.dp, vertical = 14.dp)
+                        .graphicsLayer { alpha = readerControlsAlpha }
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Color(0xD916151B))
+                        .border(1.dp, Color(0x557F788B), RoundedCornerShape(18.dp))
+                        .padding(horizontal = 14.dp, vertical = 7.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("PAGE", color = Color(0xFFAAA2B2), fontSize = 8.sp, letterSpacing = 1.4.sp)
+                        Spacer(Modifier.weight(1f))
+                        Text("${(scrubPage.toInt() + 1).coerceIn(1, pages.size)} / ${pages.size}",
+                            color = Color(0xFFD6C5F2), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Slider(
+                        value = scrubPage.coerceIn(0f, pages.lastIndex.toFloat()),
+                        onValueChange = { scrubPage = it },
+                        onValueChangeFinished = { jumpToPage(scrubPage.toInt()) },
+                        valueRange = 0f..pages.lastIndex.toFloat(),
+                        modifier = Modifier.fillMaxWidth().height(25.dp)
+                    )
                 }
             }
             Column(Modifier.align(Alignment.CenterStart).padding(start = 7.dp)) {
