@@ -67,6 +67,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.window.Dialog
@@ -3060,82 +3062,12 @@ private fun ReaderScreen(
                     Icon(Icons.Rounded.ChevronRight, "Show reader controls", tint = Color(0xFFE9E4EF), modifier = Modifier.size(18.dp))
                 }
             }
-            if (showChapterCinema && pages.isNotEmpty()) {
-                Box(Modifier.fillMaxSize().graphicsLayer { alpha = cinemaAlpha }.background(Color(0xFF08070A))) {
-                    series?.let { item ->
-                        SeriesCover(item, Modifier.fillMaxSize().graphicsLayer {
-                            alpha = 0.28f
-                            scaleX = 1.08f
-                            scaleY = 1.08f
-                        })
-                    }
-                    Box(Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(listOf(
-                            Color(0xAA070609), Color(0xCC08070A),
-                            Color(0xF2070608), Color(0xFF070608)
-                        ))
-                    ))
-                    if (motionEnabled) NoirMotionAtmosphere(Modifier.fillMaxSize())
-                    Column(
-                        Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 34.dp)
-                            .graphicsLayer {
-                                val reveal = cinemaAlpha.coerceIn(0f, 1f)
-                                alpha = reveal
-                                scaleX = 0.965f + reveal * 0.035f
-                                scaleY = 0.965f + reveal * 0.035f
-                                translationY = (1f - reveal) * 24.dp.toPx()
-                            },
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text("NOIR ORIGINAL PRESENTATION", color = Color(0xFFD6C5F2),
-                            fontSize = 8.sp, letterSpacing = 2.8.sp, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.height(27.dp))
-                        Text(series?.title?.uppercase() ?: "YOUR STORY",
-                            color = Color(0xFFF4F0F7), fontSize = 25.sp, lineHeight = 31.sp,
-                            letterSpacing = 1.1.sp, fontWeight = FontWeight.SemiBold,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            maxLines = 3, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(15.dp))
-                        Box(Modifier.width(42.dp).height(1.dp).background(Color(0xFFD6C5F2)))
-                        Spacer(Modifier.height(15.dp))
-                        Text("CHAPTER " + chapter.number.ifBlank { chapter.name },
-                            color = Color(0xFFE4DCEB), fontSize = 11.sp,
-                            letterSpacing = 2.1.sp, fontWeight = FontWeight.Medium,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(8.dp))
-                        Text(chapter.name, color = Color(0xFFAAA2B2), fontSize = 10.sp,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(35.dp))
-                        Box(Modifier.fillMaxWidth(0.62f).height(2.dp)
-                            .clip(RoundedCornerShape(2.dp)).background(Color(0x554D4656))) {
-                            Box(Modifier.fillMaxWidth(cinemaProgress.coerceIn(0f, 1f)).fillMaxHeight()
-                                .background(Color(0xFFD6C5F2)))
-                        }
-                        Spacer(Modifier.height(28.dp))
-                        Row(
-                            Modifier.clip(RoundedCornerShape(30.dp))
-                                .background(Color(0xFFEAE3F0))
-                                .clickable { showChapterCinema = false }
-                                .padding(horizontal = 22.dp, vertical = 13.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("BEGIN READING", color = Color(0xFF17131D),
-                                fontSize = 9.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.width(9.dp))
-                            Icon(Icons.Rounded.ArrowForward, null,
-                                tint = Color(0xFF17131D), modifier = Modifier.size(14.dp))
-                        }
-                        Spacer(Modifier.height(17.dp))
-                        Text("YOUR STORY CONTINUES", color = Color(0xFF8E8796),
-                            fontSize = 7.sp, letterSpacing = 2.sp)
-                    }
-                    Text("NOIR  /  THE ART OF GETTING LOST",
-                        color = Color(0xFF8C8494), fontSize = 7.sp, letterSpacing = 1.6.sp,
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 28.dp))
-                }
+            if (cinemaAlpha > 0.01f && pages.isNotEmpty()) {
+                NoirChapterCinema(
+                    series = series, chapter = chapter, visible = showChapterCinema,
+                    alpha = cinemaAlpha, progress = cinemaProgress, motionEnabled = motionEnabled,
+                    onBegin = { showChapterCinema = false }
+                )
             }
         }
     }
@@ -3888,6 +3820,211 @@ internal fun BottomNav(tab: String, onTab: (String) -> Unit) {
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoirChapterCinema(
+    series: Series?,
+    chapter: Chapter,
+    visible: Boolean,
+    alpha: Float,
+    progress: Float,
+    motionEnabled: Boolean,
+    onBegin: () -> Unit
+) {
+    // Staggered reveal: elements ease in one after another once the scene is on screen.
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(visible) { shown = visible }
+    @Composable
+    fun reveal(delayMs: Int): Float {
+        val value by animateFloatAsState(
+            targetValue = if (shown) 1f else 0f,
+            animationSpec = tween(if (shown) 850 else 240, delayMillis = if (shown) delayMs else 0, easing = FastOutSlowInEasing),
+            label = "cinema-reveal-$delayMs"
+        )
+        return value
+    }
+    val posterReveal = reveal(120)
+    val labelReveal = reveal(420)
+    val titleReveal = reveal(560)
+    val buttonReveal = reveal(800)
+
+    val loop = rememberInfiniteTransition(label = "noir-cinema-loop")
+    val drift by loop.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(10000, easing = LinearEasing), androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "cinema-drift"
+    )
+    val tilt by loop.animateFloat(
+        initialValue = 0f, targetValue = (2 * Math.PI).toFloat(),
+        animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing)),
+        label = "cinema-tilt"
+    )
+    val glowTravel by loop.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(4200, easing = LinearEasing)),
+        label = "cinema-glow"
+    )
+    val motion = if (motionEnabled) 1f else 0f
+    val posterShape = RoundedCornerShape(24.dp)
+    val subtitle = chapter.name.let { raw ->
+        val tail = if (raw.contains("\u00B7")) raw.substringAfter("\u00B7").trim() else raw.trim()
+        if (tail.isBlank() || tail.equals("Chapter ${chapter.number}", ignoreCase = true)) null else tail
+    }
+
+    Box(
+        Modifier.fillMaxSize().graphicsLayer { this.alpha = alpha }
+            .background(Color(0xFF050407))
+            .pointerInput(Unit) { detectTapGestures { } }
+    ) {
+        // Slowly drifting, softly blurred cover as the backdrop (blur needs Android 12+; older devices get the dimmed art).
+        series?.let { item ->
+            SeriesCover(
+                item,
+                Modifier.fillMaxSize()
+                    .blur(30.dp)
+                    .graphicsLayer {
+                        this.alpha = 0.66f
+                        val zoom = 1.2f + 0.12f * drift * motion
+                        scaleX = zoom
+                        scaleY = zoom
+                        translationX = (drift - 0.5f) * 46.dp.toPx() * motion
+                        translationY = (0.5f - drift) * 22.dp.toPx() * motion
+                    }
+            )
+        }
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    0f to Color(0xB3050407),
+                    .38f to Color(0x33050407),
+                    .72f to Color(0xCC050407),
+                    1f to Color(0xFF050407)
+                )
+            )
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.radialGradient(
+                    listOf(Color(0x558C6CFF), Color.Transparent),
+                    center = Offset.Unspecified, radius = 900f
+                )
+            )
+        )
+
+        Column(
+            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()
+                .padding(horizontal = 32.dp).padding(top = 14.dp, bottom = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "NOIR  ORIGINAL", color = Color.White.copy(alpha = 0.55f), fontSize = 9.sp,
+                letterSpacing = 3.sp, fontWeight = FontWeight.Medium,
+                modifier = Modifier.graphicsLayer { this.alpha = labelReveal }
+            )
+            Spacer(Modifier.weight(0.7f))
+
+            Box(
+                Modifier.fillMaxWidth(0.58f).aspectRatio(0.68f)
+                    .graphicsLayer {
+                        this.alpha = posterReveal
+                        val settle = 0.93f + 0.07f * posterReveal
+                        scaleX = settle
+                        scaleY = settle
+                        translationY = (1f - posterReveal) * 28.dp.toPx()
+                        rotationY = 5f * kotlin.math.sin(tilt) * motion
+                        rotationX = 2.5f * kotlin.math.cos(tilt) * motion
+                        cameraDistance = 16f * density
+                    }
+                    .shadow(34.dp, posterShape, ambientColor = Color(0xFF8C6CFF), spotColor = Color(0xFF8C6CFF))
+                    .background(Color(0xFF16141B))
+                    .drawWithContent {
+                        drawContent()
+                        drawRoundRect(
+                            color = Color.White.copy(alpha = 0.16f),
+                            cornerRadius = CornerRadius(24.dp.toPx()),
+                            style = Stroke(width = 1.dp.toPx())
+                        )
+                        drawTravelingOutlineGlow(
+                            cornerRadius = 24.dp.toPx(), progress = glowTravel,
+                            inset = 1.5.dp.toPx(), arcFraction = 0.24f, strokeWidth = 1.5.dp.toPx()
+                        )
+                    }
+            ) {
+                if (series?.coverUrl != null) {
+                    AsyncImage(
+                        model = series.coverUrl, contentDescription = null,
+                        modifier = Modifier.fillMaxSize().clip(posterShape), contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(Icons.Rounded.MenuBook, null, tint = Muted, modifier = Modifier.align(Alignment.Center).size(40.dp))
+                }
+            }
+
+            Spacer(Modifier.height(30.dp))
+            Text(
+                "CHAPTER " + chapter.number.ifBlank { chapter.name }.uppercase(),
+                color = Color(0xFFD6C5F2), fontSize = 11.sp, letterSpacing = 3.2.sp, fontWeight = FontWeight.SemiBold,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.graphicsLayer {
+                    this.alpha = labelReveal
+                    translationY = (1f - labelReveal) * 14.dp.toPx()
+                }
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                series?.title ?: "Your story", color = Color.White, fontSize = 28.sp, lineHeight = 33.sp,
+                fontWeight = FontWeight.SemiBold, letterSpacing = (-.5).sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.graphicsLayer {
+                    this.alpha = titleReveal
+                    translationY = (1f - titleReveal) * 16.dp.toPx()
+                }
+            )
+            if (subtitle != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    subtitle, color = Color.White.copy(alpha = 0.58f), fontSize = 13.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.graphicsLayer { this.alpha = titleReveal }
+                )
+            }
+
+            Spacer(Modifier.weight(1f))
+            Column(
+                Modifier.fillMaxWidth().graphicsLayer {
+                    this.alpha = buttonReveal
+                    translationY = (1f - buttonReveal) * 20.dp.toPx()
+                },
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    Modifier.fillMaxWidth().height(56.dp).clip(CircleShape)
+                        .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.24f), Color.White.copy(alpha = 0.10f))))
+                        .border(1.dp, Color.White.copy(alpha = 0.20f), CircleShape)
+                        .drawBehind {
+                            drawTravelingOutlineGlow(
+                                cornerRadius = size.height / 2f - 1.5.dp.toPx(), progress = (glowTravel + 0.5f) % 1f,
+                                inset = 1.5.dp.toPx(), arcFraction = 0.24f, strokeWidth = 1.4.dp.toPx()
+                            )
+                        }
+                        .clickable(onClick = onBegin),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Text("Begin reading", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                        Icon(Icons.Rounded.ArrowForward, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Box(Modifier.fillMaxWidth(0.26f).height(2.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.16f))) {
+                    Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).fillMaxHeight().background(Color.White.copy(alpha = 0.78f)))
+                }
+                Spacer(Modifier.height(9.dp))
+                Text("Starting automatically", color = Color.White.copy(alpha = 0.38f), fontSize = 10.sp, letterSpacing = 0.6.sp)
             }
         }
     }
