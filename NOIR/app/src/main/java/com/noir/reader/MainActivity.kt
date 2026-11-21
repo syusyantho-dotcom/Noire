@@ -685,11 +685,25 @@ private fun NoirApp() {
                     },
                     onTab = { navigateTab(it) }
                 )
-                tab == "Profile" -> ProfileScreen(introSound, launchIntro, matureContentEnabled,
-                    { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
-                    { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
-                    { matureContentEnabled = it; prefs.edit().putBoolean("mature_content_18_plus", it).apply() },
-                    { showAbout = true }, { showWhatsNew = true }, { navigateTab(it) })
+                tab == "Profile" -> {
+                    val latestReading = readingHistory.values.maxByOrNull { it.updatedAt }
+                    val latestSeries = (saved.toList() + recentlyRead.toList()).firstOrNull { item ->
+                        readingHistory["${item.sourceId}:${item.id}"]?.updatedAt == latestReading?.updatedAt
+                    }
+                    val averageProgress = if (seriesProgress.isEmpty()) 0 else
+                        (seriesProgress.values.average().coerceIn(0.0, 1.0) * 100).toInt()
+                    val activityLabel = latestReading?.let { entry ->
+                        val days = ((System.currentTimeMillis() - entry.updatedAt).coerceAtLeast(0L) / 86_400_000L).toInt()
+                        when (days) { 0 -> "TODAY"; 1 -> "YESTERDAY"; else -> "$days DAYS AGO" }
+                    } ?: "NO ACTIVITY YET"
+                    ProfileScreen(introSound, launchIntro, matureContentEnabled, saved.size,
+                        readingHistory.size, averageProgress, latestSeries?.title ?: latestReading?.chapterName.orEmpty(),
+                        activityLabel,
+                        { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
+                        { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
+                        { matureContentEnabled = it; prefs.edit().putBoolean("mature_content_18_plus", it).apply() },
+                        { showAbout = true }, { showWhatsNew = true }, { navigateTab(it) })
+                }
                 tab == "Home" -> HomeScreen(catalogue, loading, error, recentlyRead.toList(), saved.toList(), seriesProgress.toMap(), readingHistory.toMap(), openSeries, { item -> pendingResumeKey = "${item.sourceId}:${item.id}"; openSeries(item) }, { navigateTab(it) })
                 else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, discoveryCompactGrid, { discoveryCompactGrid = it }, matureContentEnabled, { navigateTab(it) })
             }
@@ -1409,7 +1423,7 @@ private fun HomeFeatureRow(series: Series, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit) {
+private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, savedCount: Int, trackedCount: Int, averageProgress: Int, latestTitle: String, activityLabel: String, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit) {
     var showMatureConfirmation by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(24.dp))
@@ -1424,7 +1438,33 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
             }
             Text("1.4.0", color = Silver, fontSize = 9.sp)
         }
-        Spacer(Modifier.height(26.dp))
+        Spacer(Modifier.height(18.dp))
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(21.dp))
+            .background(Brush.linearGradient(listOf(Color(0xFF241D2C), Color(0xFF151319))))
+            .border(1.dp, Color(0xFF403447), RoundedCornerShape(21.dp)).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(13.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("READING INTELLIGENCE", color = Color(0xFFCAB6E0), fontSize = 8.sp,
+                        letterSpacing = 1.6.sp, fontWeight = FontWeight.Bold)
+                    Text("Your reading snapshot", color = White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Icon(Icons.Rounded.AutoGraph, null, tint = Color(0xFFD9C8EF), modifier = Modifier.size(22.dp))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                ProfileStatTile("SAVED TITLES", savedCount.toString(), Modifier.weight(1f))
+                ProfileStatTile("TRACKED STORIES", trackedCount.toString(), Modifier.weight(1f))
+                ProfileStatTile("AVG. PROGRESS", "$averageProgress%", Modifier.weight(1f))
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("LAST READING ACTIVITY", color = Muted, fontSize = 7.sp, letterSpacing = 1.2.sp)
+                Text(if (latestTitle.isBlank()) "Your next chapter starts here" else latestTitle,
+                    color = White, fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(activityLabel, color = Color(0xFFC9B4E0), fontSize = 8.sp, letterSpacing = .8.sp)
+            }
+        }
+        Spacer(Modifier.height(22.dp))
         Text("APP SETTINGS", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
         SettingSwitch("Intro sound", "Play the short chime when NOIR opens", introSound, onIntroSound)
@@ -1462,6 +1502,16 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
         dismissButton = { TextButton(onClick = { showMatureConfirmation = false }) { Text("CANCEL", color = Muted) } },
         containerColor = Panel
     )
+}
+
+@Composable
+private fun ProfileStatTile(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier.clip(RoundedCornerShape(13.dp)).background(Color(0xFF17141C))
+        .border(1.dp, Color(0xFF342B3B), RoundedCornerShape(13.dp)).padding(horizontal = 9.dp, vertical = 11.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(value, color = White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = Muted, fontSize = 6.sp, letterSpacing = .55.sp, maxLines = 1)
+    }
 }
 
 @Composable
