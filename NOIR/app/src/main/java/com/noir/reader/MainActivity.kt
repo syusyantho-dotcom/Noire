@@ -729,13 +729,22 @@ private fun CatalogueScreen(
     matureContentEnabled: Boolean, onTab: (String) -> Unit
 ) {
     var sortMode by remember { mutableStateOf("FOR YOU") }
-    val sortedCatalogue = remember(catalogue, sortMode) {
+    var sourceFilter by remember { mutableStateOf("ALL SOURCES") }
+    val availableSources = remember(catalogue) { catalogue.map { it.sourceName }.distinct().sorted() }
+    LaunchedEffect(availableSources) {
+        if (sourceFilter != "ALL SOURCES" && sourceFilter !in availableSources) sourceFilter = "ALL SOURCES"
+    }
+    val sourceFiltered = remember(catalogue, sourceFilter) {
+        if (sourceFilter == "ALL SOURCES") catalogue else catalogue.filter { it.sourceName == sourceFilter }
+    }
+    val sortedCatalogue = remember(sourceFiltered, sortMode) {
         when (sortMode) {
-            "A–Z" -> catalogue.sortedBy { it.title.lowercase() }
-            else -> catalogue
+            "A–Z" -> sourceFiltered.sortedBy { it.title.lowercase() }
+            "SOURCE" -> sourceFiltered.sortedBy { it.sourceName.lowercase() + it.title.lowercase() }
+            else -> sourceFiltered
         }
     }
-    val featured = if (query.isBlank() && sortMode == "FOR YOU") sortedCatalogue.firstOrNull() else null
+    val featured = if (query.isBlank() && sortMode == "FOR YOU" && sourceFilter == "ALL SOURCES") sortedCatalogue.firstOrNull() else null
     val remaining = if (featured != null) sortedCatalogue.drop(1) else sortedCatalogue
     val columns = if (compactGrid) 3 else 2
 
@@ -773,6 +782,22 @@ private fun CatalogueScreen(
                 )
             }
             item {
+                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("EXPLORE BY SOURCE", color = Muted, fontSize = 8.sp, letterSpacing = 1.2.sp)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        items(listOf("ALL SOURCES") + availableSources) { sourceName ->
+                            val active = sourceFilter == sourceName
+                            Box(Modifier.clip(RoundedCornerShape(30.dp))
+                                .background(if (active) Color(0xFF342B3D) else Color(0xFF151419))
+                                .border(1.dp, if (active) Color(0xFF665572) else Color(0xFF302C35), RoundedCornerShape(30.dp))
+                                .clickable { sourceFilter = sourceName }.padding(horizontal = 12.dp, vertical = 9.dp)) {
+                                Text(sourceName, color = if (active) Color(0xFFE9DFF2) else Muted, fontSize = 8.sp, maxLines = 1, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+            }
+            item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(if (query.isBlank()) "MADE FOR YOUR NEXT OBSESSION" else "YOUR SEARCH",
@@ -780,7 +805,7 @@ private fun CatalogueScreen(
                         Spacer(Modifier.height(3.dp))
                         Text("A universe of stories, gathered in one place", color = Muted, fontSize = 9.sp)
                     }
-                    Text("${catalogue.size} TITLES", color = Color(0xFFBDAFCB), fontSize = 8.sp, letterSpacing = 1.sp)
+                    Text("${sortedCatalogue.size} TITLES", color = Color(0xFFBDAFCB), fontSize = 8.sp, letterSpacing = 1.sp)
                 }
             }
             if (loading && catalogue.isEmpty()) {
@@ -850,7 +875,7 @@ private fun CatalogueScreen(
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("FOR YOU", "LATEST", "A–Z").forEach { mode ->
+                            listOf("FOR YOU", "A–Z", "SOURCE").forEach { mode ->
                                 val selected = sortMode == mode
                                 Box(Modifier.clip(RoundedCornerShape(30.dp))
                                     .background(if (selected) Color(0xFF342B3D) else Color(0xFF151419))
