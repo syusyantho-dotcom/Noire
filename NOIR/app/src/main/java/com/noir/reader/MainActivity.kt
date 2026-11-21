@@ -3513,85 +3513,177 @@ private data class NoirWelcomePage(
 private fun NoirWelcomeWalkthrough(onFinish: () -> Unit) {
     val pages = remember {
         listOf(
-            NoirWelcomePage("WELCOME TO YOUR NEXT ESCAPE", "Welcome to NOIR.", "A quieter place to discover stories, lose yourself in new worlds, and read at your own pace.", Icons.Rounded.AutoStories, "YOUR READING UNIVERSE"),
-            NoirWelcomePage("FIND YOUR NEXT OBSESSION", "Discover new worlds.", "Explore manga and manhwa, browse different sources, and find a story that feels made for you.", Icons.Rounded.Explore, "MANGA  /  MANHWA  /  MORE"),
-            NoirWelcomePage("MADE FOR THE WAY YOU READ", "Settle into every chapter.", "Choose your reading style, keep your place automatically, and pick up right where the story paused.", Icons.Rounded.MenuBook, "A READER THAT REMEMBERS"),
-            NoirWelcomePage("KEEP EVERY STORY CLOSE", "Your library. Your worlds.", "Save favourites, organize your reading, and download supported chapters for offline moments.", Icons.Rounded.Bookmarks, "SAVE  /  ORGANIZE  /  READ")
+            NoirWelcomePage("WELCOME TO YOUR NEXT ESCAPE", "Every story begins here.", "Step into a universe of manga, manhwa and unforgettable worlds. Your next favourite story is waiting.", Icons.Rounded.AutoStories, "DISCOVER YOUR NEXT WORLD"),
+            NoirWelcomePage("A WORLD OF STORIES", "Find your next obsession.", "Explore community sources, discover new series and follow the stories that keep you turning pages.", Icons.Rounded.Explore, "MANGA  /  MANHWA  /  MORE"),
+            NoirWelcomePage("MADE FOR YOUR PACE", "Read without limits.", "Choose your reading direction, make every page yours and continue right where you left off.", Icons.Rounded.MenuBook, "YOUR READING. YOUR RULES."),
+            NoirWelcomePage("YOUR LIBRARY, ALWAYS", "Keep stories close.", "Save favourites, track your progress and download supported chapters for offline reading.", Icons.Rounded.Bookmarks, "SAVE  /  TRACK  /  READ")
         )
     }
+    val palettes = listOf(
+        Triple(Color(0xFF1B74FF), Color(0xFF55D5FF), Color(0xFF6B43C8)),
+        Triple(Color(0xFF7B3DDA), Color(0xFFED7BBD), Color(0xFF2866C9)),
+        Triple(Color(0xFF00A9A1), Color(0xFF72E0C5), Color(0xFF356BCB)),
+        Triple(Color(0xFFB45BFF), Color(0xFF6C9BFF), Color(0xFFDB6B9A))
+    )
     var page by remember { mutableIntStateOf(0) }
     val current = pages[page]
     val isLast = page == pages.lastIndex
+    val palette = palettes[page]
+    val wave = rememberInfiniteTransition(label = "noir-walkthrough-wave")
+    val wavePosition by wave.animateFloat(
+        initialValue = -0.18f,
+        targetValue = 1.18f,
+        animationSpec = infiniteRepeatable(tween(7200, easing = LinearEasing)),
+        label = "noir-wave-position"
+    )
+    val counterWave by wave.animateFloat(
+        initialValue = 1.12f,
+        targetValue = -0.12f,
+        animationSpec = infiniteRepeatable(tween(9100, easing = LinearEasing)),
+        label = "noir-counter-wave"
+    )
+    val glowPulse by wave.animateFloat(
+        initialValue = 0.72f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2600), repeatMode = androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "noir-glow-pulse"
+    )
 
-    Box(
-        Modifier.fillMaxSize().background(Black).statusBarsPadding().navigationBarsPadding()
-            .padding(horizontal = 25.dp, vertical = 12.dp)
+    Column(
+        Modifier.fillMaxSize().background(Color(0xFF050609)).statusBarsPadding()
+            .navigationBarsPadding().padding(horizontal = 24.dp, vertical = 13.dp)
     ) {
-        Text("NOIR", modifier = Modifier.align(Alignment.TopStart).padding(top = 10.dp),
-            color = White, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp)
-        TextButton(onClick = onFinish, modifier = Modifier.align(Alignment.TopEnd).padding(top = 1.dp)) {
-            Text("SKIP  ›", color = Silver, fontSize = 11.sp, letterSpacing = 1.sp)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                NoirLogoMark(27.dp)
+                Text("NOIR", color = White, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.5.sp)
+            }
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onFinish) {
+                Text("SKIP  ›", color = Color(0xFFB8B9C4), fontSize = 10.sp, letterSpacing = 1.2.sp)
+            }
         }
-        Column(Modifier.fillMaxSize().padding(top = 54.dp, bottom = 10.dp), horizontalAlignment = Alignment.Start) {
-            Box(
-                Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(30.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFF211B29), Color(0xFF111114), Color(0xFF211B29))))
-                    .border(1.dp, Color(0xFF38303F), RoundedCornerShape(30.dp)),
-                contentAlignment = Alignment.Center
+
+        Spacer(Modifier.height(13.dp))
+
+        Box(
+            Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(30.dp))
+                .background(Color(0xFF0A0D16))
+                .border(1.dp, Color.White.copy(alpha = .13f), RoundedCornerShape(30.dp))
+        ) {
+            Canvas(Modifier.fillMaxSize()) {
+                val w = size.width
+                val h = size.height
+                drawRect(
+                    brush = Brush.linearGradient(
+                        colors = listOf(Color(0xFF07101F), Color(0xFF11101B), Color(0xFF09090F)),
+                        start = Offset(0f, 0f),
+                        end = Offset(w, h)
+                    )
+                )
+                val firstCenter = Offset(w * wavePosition, h * .34f)
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(palette.first.copy(alpha = .82f * glowPulse), palette.first.copy(alpha = .30f), Color.Transparent),
+                        center = firstCenter,
+                        radius = size.minDimension * .78f
+                    ),
+                    radius = size.minDimension * .78f,
+                    center = firstCenter
+                )
+                val secondCenter = Offset(w * counterWave, h * .60f)
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(palette.second.copy(alpha = .62f), palette.third.copy(alpha = .18f), Color.Transparent),
+                        center = secondCenter,
+                        radius = size.minDimension * .68f
+                    ),
+                    radius = size.minDimension * .68f,
+                    center = secondCenter
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(palette.third.copy(alpha = .25f), Color.Transparent),
+                        center = Offset(w * .5f, h * .92f),
+                        radius = size.minDimension * .65f
+                    ),
+                    radius = size.minDimension * .65f,
+                    center = Offset(w * .5f, h * .92f)
+                )
+            }
+            Column(
+                Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 23.dp),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Box(Modifier.size(210.dp).clip(CircleShape)
-                    .background(Brush.radialGradient(listOf(Color(0x665F4778), Color(0x0017141C)))))
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.size(112.dp).clip(RoundedCornerShape(30.dp))
-                        .background(Brush.linearGradient(listOf(Color(0xFF33283F), Color(0xFF17151C))))
-                        .border(1.dp, Color(0x665D4A70), RoundedCornerShape(30.dp)),
-                        contentAlignment = Alignment.Center) {
-                        Icon(current.icon, contentDescription = null, tint = Color(0xFFE8DDF4), modifier = Modifier.size(48.dp))
+                Column {
+                    Text("NOIR / THE READING UNIVERSE", color = Color.White.copy(alpha = .78f), fontSize = 8.sp, letterSpacing = 2.2.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("STORIES MOVE YOU.", color = Color.White.copy(alpha = .68f), fontSize = 8.sp, letterSpacing = 2.4.sp)
+                }
+                key(page) {
+                    Column(
+                        Modifier.fillMaxWidth().animateContentSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            Modifier.size(142.dp).clip(RoundedCornerShape(38.dp))
+                                .background(Brush.linearGradient(listOf(Color.White.copy(alpha = .19f), palette.first.copy(alpha = .25f), Color(0xFF080A12).copy(alpha = .78f))))
+                                .border(1.dp, Color.White.copy(alpha = .24f), RoundedCornerShape(38.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(Modifier.size(116.dp).clip(CircleShape).background(palette.second.copy(alpha = .12f)), contentAlignment = Alignment.Center) {
+                                Icon(current.icon, null, tint = Color.White, modifier = Modifier.size(62.dp))
+                            }
+                        }
+                        Spacer(Modifier.height(19.dp))
+                        Text(current.tag, color = Color.White.copy(alpha = .86f), fontSize = 8.sp, letterSpacing = 1.9.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    Spacer(Modifier.height(18.dp))
-                    Text(current.tag, color = Color(0xFFD2BFE8), fontSize = 8.sp, letterSpacing = 2.2.sp, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.height(18.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
-                        repeat(3) { index ->
-                            Box(Modifier.size(if (index == 1) 50.dp else 38.dp, 54.dp)
-                                .clip(RoundedCornerShape(7.dp))
-                                .background(Brush.linearGradient(when ((index + page) % 3) {
-                                    0 -> listOf(Color(0xFF41344F), Color(0xFF1A1720))
-                                    1 -> listOf(Color(0xFF293A4B), Color(0xFF151A22))
-                                    else -> listOf(Color(0xFF493A32), Color(0xFF1C1818))
-                                })).border(1.dp, Color(0x557F7090), RoundedCornerShape(7.dp)))
+                }
+                Column {
+                    Text(current.eyebrow, color = Color.White.copy(alpha = .72f), fontSize = 8.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(9.dp))
+                    key("copy-$page") {
+                        Column {
+                            Text(current.title, color = Color.White, fontSize = 29.sp, lineHeight = 35.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(9.dp))
+                            Text(current.description, color = Color.White.copy(alpha = .75f), fontSize = 12.sp, lineHeight = 19.sp)
                         }
                     }
                 }
             }
-            Spacer(Modifier.height(29.dp))
-            Text(current.eyebrow, color = Color(0xFFBBA4D5), fontSize = 8.sp, letterSpacing = 2.1.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(10.dp))
-            key(page) {
-                Column {
-                    Text(current.title, color = White, fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(9.dp))
-                    Text(current.description, color = Muted, fontSize = 13.sp, lineHeight = 21.sp)
-                }
-            }
-            Spacer(Modifier.height(22.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                pages.indices.forEach { index ->
-                    Box(Modifier.width(if (index == page) 23.dp else 6.dp).height(5.dp).clip(CircleShape)
-                        .background(if (index == page) Color(0xFFD8C9E8) else Color(0xFF45414A)))
-                }
-                Spacer(Modifier.weight(1f))
-                Text("${page + 1} / ${pages.size}", color = Muted, fontSize = 9.sp, letterSpacing = 1.sp)
-            }
-            Spacer(Modifier.height(22.dp))
-            Button(onClick = { if (isLast) onFinish() else page += 1 },
-                modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(30.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4F2F6), contentColor = Color(0xFF111014))) {
-                Text(if (isLast) "Enter NOIR" else "Continue", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.width(8.dp))
-                Icon(Icons.Rounded.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
-            }
         }
+
+        Spacer(Modifier.height(21.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                pages.indices.forEach { index ->
+                    Box(
+                        Modifier.width(if (index == page) 25.dp else 6.dp).height(5.dp)
+                            .clip(CircleShape)
+                            .background(if (index == page) palette.second else Color(0xFF454650))
+                    )
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Text("${(page + 1).toString().padStart(2, '0')}  /  ${pages.size.toString().padStart(2, '0')}", color = Color(0xFF858691), fontSize = 9.sp, letterSpacing = 1.3.sp)
+        }
+        Spacer(Modifier.height(18.dp))
+        Button(
+            onClick = { if (isLast) onFinish() else page += 1 },
+            modifier = Modifier.fillMaxWidth().height(55.dp),
+            shape = RoundedCornerShape(18.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = palette.first, contentColor = Color.White)
+        ) {
+            Text(if (isLast) "ENTER NOIR" else "CONTINUE", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+            Spacer(Modifier.width(10.dp))
+            Icon(Icons.Rounded.ArrowForward, null, modifier = Modifier.size(17.dp))
+        }
+        Spacer(Modifier.height(9.dp))
+        Text(
+            if (isLast) "Your next chapter starts now." else "A universe between the pages.",
+            color = Color(0xFF777984), fontSize = 9.sp, letterSpacing = .6.sp,
+            modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
     }
 }
 
