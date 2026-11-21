@@ -1007,19 +1007,7 @@ private fun NoirApp() {
                 prefs.edit().putBoolean("intro_seen_once", true).apply()
                 if (!prefs.getBoolean("welcome_seen", false)) showWelcome = true
             }
-            if (showWelcome && !showIntro) NoirWelcomeWalkthrough(
-                onFinish = {
-                    showWelcome = false
-                    prefs.edit().putBoolean("welcome_seen", true).apply()
-                }
-            )
-          }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
+            if (sho@Composable
 private fun CatalogueScreen(
     tab: String, query: String, onQuery: (String) -> Unit, catalogue: List<Series>,
     loading: Boolean, error: String?, hasMore: Boolean, loadingMore: Boolean, onLoadMore: () -> Unit,
@@ -1338,164 +1326,12 @@ private fun CatalogueScreen(
         BottomNav("Discover", onTab)
     }
     if (showAdvancedFilters) {
-        @OptIn(ExperimentalLayoutApi::class)
-        @Composable
-        fun GenrePill(label: String, selected: Boolean, excluded: Boolean = false, onClick: () -> Unit) {
-            val accent = if (excluded) Color(0xFFFF9C91) else Color(0xFFD6C5F2)
-            Row(
-                Modifier.clip(RoundedCornerShape(13.dp))
-                    .background(if (selected) accent.copy(alpha = 0.16f) else Color(0xFF1D1B22))
-                    .border(1.dp, if (selected) accent.copy(alpha = 0.85f) else Color(0xFF514A58), RoundedCornerShape(13.dp))
-                    .clickable(onClick = onClick)
-                    .padding(horizontal = 13.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp)
-            ) {
-                if (selected) Icon(if (excluded) Icons.Rounded.Remove else Icons.Rounded.Check, null, tint = accent, modifier = Modifier.size(13.dp))
-                Text(label, color = if (selected) accent else Color(0xFFE7E1EB), fontSize = 11.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
-            }
-        }
-        Dialog(
+        AlertDialog(
             onDismissRequest = { showAdvancedFilters = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Column(
-                Modifier.fillMaxWidth().padding(horizontal = 18.dp)
-                    .heightIn(max = 760.dp)
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(Color(0xFF151419))
-                    .border(1.dp, Color(0xFF49404F), RoundedCornerShape(28.dp))
-                    .padding(20.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("DISCOVERY / FILTERS", color = Color(0xFFBDAFCB), fontSize = 8.sp, letterSpacing = 2.sp)
-                        Spacer(Modifier.height(5.dp))
-                        Text("Build your collection", color = White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Fine-tune the stories that find you.", color = Muted, fontSize = 10.sp)
-                    }
-                    IconButton(onClick = { showAdvancedFilters = false }) {
-                        Icon(Icons.Rounded.Close, "Close filters", tint = Silver)
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-                Column(
-                    Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("SOURCE", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            (listOf("ALL SOURCES") + availableSources).forEach { option ->
-                                GenrePill(option, sourceFilter == option) { sourceFilter = option }
-                            }
-                        }
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("PUBLICATION STATUS", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            (listOf("ANY STATUS") + availableStatuses).forEach { option ->
-                                GenrePill(option.replaceFirstChar { it.uppercase() }, selectedStatus == option) { selectedStatus = option }
-                            }
-                        }
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("ORIGINAL LANGUAGE", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            (listOf("ANY LANGUAGE") + availableLanguages).forEach { option ->
-                                GenrePill(option.uppercase(), selectedLanguage == option) { selectedLanguage = option }
-                            }
-                        }
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text("INCLUDE GENRES", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
-                                Text("Every selected genre must match", color = Muted, fontSize = 9.sp)
-                            }
-                            Text("${selectedGenres.size} SELECTED", color = Color(0xFFD6C5F2), fontSize = 8.sp)
-                        }
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            availableGenres.forEach { genre ->
-                                GenrePill(genre, genre in selectedGenres) {
-                                    selectedGenres = if (genre in selectedGenres) selectedGenres - genre else selectedGenres + genre
-                                    if (genre in excludedGenres) excludedGenres = excludedGenres - genre
-                                }
-                            }
-                        }
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text("EXCLUDE GENRES", color = Color(0xFFFF9C91), fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
-                                Text("Hide titles with these genres", color = Muted, fontSize = 9.sp)
-                            }
-                            Text("${excludedGenres.size} EXCLUDED", color = Color(0xFFFF9C91), fontSize = 8.sp)
-                        }
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            availableGenres.forEach { genre ->
-                                GenrePill(genre, genre in excludedGenres, excluded = true) {
-                                    excludedGenres = if (genre in excludedGenres) excludedGenres - genre else excludedGenres + genre
-                                    if (genre in selectedGenres) selectedGenres = selectedGenres - genre
-                                }
-                            }
-                        }
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Text("EXCLUDE WORDS", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
-                        OutlinedTextField(
-                            value = excludedWords, onValueChange = { excludedWords = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("e.g. harem, horror", color = Muted, fontSize = 11.sp) },
-                            singleLine = true, shape = RoundedCornerShape(14.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color(0xFFB99CDA), unfocusedBorderColor = Color(0xFF514A58),
-                                focusedContainerColor = Color(0xFF1D1B22), unfocusedContainerColor = Color(0xFF1D1B22),
-                                focusedTextColor = White, unfocusedTextColor = White, cursorColor = Silver
-                            )
-                        )
-                    }
-                    Text("Filters depend on metadata provided by each source. Some sources may not support every filter.", color = Muted, fontSize = 9.sp, lineHeight = 14.sp)
-                }
-                Spacer(Modifier.height(15.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = {
-                        selectedGenres = emptySet()
-                        excludedGenres = emptySet()
-                        selectedStatus = "ANY STATUS"
-                        selectedLanguage = "ANY LANGUAGE"
-                        excludedWords = ""
-                        sourceFilter = "ALL SOURCES"
-                    }) { Text("RESET", color = Muted, fontSize = 10.sp) }
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { showAdvancedFilters = false }) { Text("DONE", color = White, fontSize = 10.sp) }
-                    Button(
-                        onClick = {
-                            val presetName = query.takeIf { it.isNotBlank() } ?: selectedGenres.firstOrNull() ?: "Custom filters"
-                            val preset = JSONObject()
-                                .put("name", presetName.take(24))
-                                .put("query", query)
-                                .put("source", sourceFilter)
-                                .put("status", selectedStatus)
-                                .put("language", selectedLanguage)
-                                .put("genres", selectedGenres.joinToString("|"))
-                                .put("excluded", excludedGenres.joinToString("|"))
-                                .put("exclude", excludedWords)
-                            val raw = preset.toString()
-                            if (raw !in savedPresets) savedPresets.add(raw)
-                            showAdvancedFilters = false
-                        },
-                        shape = RoundedCornerShape(13.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF493B59), contentColor = Color(0xFFF1E8FA))
-                    ) { Text("SAVE PRESET", fontSize = 9.sp, letterSpacing = .8.sp) }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DiscoveryCoverTile
+            containerColor = Color(0xFF151419),
+            title = { Text("Advanced discovery", color = White, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(Modifier.heightIn(max = 470.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(13.dp)) {
                     Text("SOURCE", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.2.sp)
                     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         (listOf("ALL SOURCES") + availableSources).forEach { option ->
@@ -1573,7 +1409,13 @@ private fun DiscoveryCoverTile
                     }) { Text("RESET", color = Muted) }
                     TextButton(onClick = { showAdvancedFilters = false }) { Text("DONE", color = White) }
                 }
-(series: Series, compact: Boolean, alternateHeight: Boolean, onClick: () -> Unit) {
+            }
+        )
+    }
+}
+
+@Composable
+private fun DiscoveryCoverTile(series: Series, compact: Boolean, alternateHeight: Boolean, onClick: () -> Unit) {
     val imageRatio = when {
         compact -> 0.72f
         alternateHeight -> 0.78f
