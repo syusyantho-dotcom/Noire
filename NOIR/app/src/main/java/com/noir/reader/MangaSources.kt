@@ -17,7 +17,11 @@ data class Series(
     val sourceId: String,
     val sourceName: String,
     val sourceUrl: String? = null,
-    val sourcePublicUrl: String? = null
+    val sourcePublicUrl: String? = null,
+    val tags: List<String> = emptyList(),
+    val status: String? = null,
+    val originalLanguage: String? = null,
+    val year: Int? = null
 )
 
 data class Chapter(
@@ -107,7 +111,21 @@ class MangaDexSource : MangaSource {
                 }
             }
         }
-        return Series(item.optString("id"), title, description, cover, id, name)
+        val tagsArray = attributes.optJSONArray("tags")
+        val tags = if (tagsArray == null) emptyList() else (0 until tagsArray.length()).mapNotNull { index ->
+            val tag = tagsArray.optJSONObject(index) ?: return@mapNotNull null
+            val tagAttributes = tag.optJSONObject("attributes") ?: return@mapNotNull null
+            val names = tagAttributes.optJSONObject("name") ?: return@mapNotNull null
+            names.optString("en").takeIf { it.isNotBlank() }
+        }
+        val year = attributes.optInt("year", 0).takeIf { it > 0 }
+        return Series(
+            item.optString("id"), title, description, cover, id, name,
+            tags = tags,
+            status = attributes.optString("status").takeIf { it.isNotBlank() },
+            originalLanguage = attributes.optString("originalLanguage").takeIf { it.isNotBlank() },
+            year = year
+        )
     }
 
     private fun mangaUrl(query: String?, page: Int): String {
