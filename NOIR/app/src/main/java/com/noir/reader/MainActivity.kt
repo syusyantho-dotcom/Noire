@@ -30,6 +30,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -215,6 +216,7 @@ private fun NoirApp() {
     var selectedChapter by remember { mutableStateOf<Chapter?>(null) }
     var pendingResumeKey by remember { mutableStateOf<String?>(null) }
     val navigationStack = remember { mutableStateListOf<NoirNavigationState>() }
+    val tabBackStack = remember { mutableStateListOf<String>() }
     val currentNavigationState = { NoirNavigationState(tab, selected, selectedSource, selectedChapter) }
     fun goBack() {
         if (navigationStack.isNotEmpty()) {
@@ -227,12 +229,14 @@ private fun NoirApp() {
             selectedChapter != null -> selectedChapter = null
             selectedSource != null -> selectedSource = null
             selected != null -> selected = null
+            tabBackStack.isNotEmpty() -> tab = tabBackStack.removeAt(tabBackStack.lastIndex)
             tab != "Home" -> tab = "Home"
         }
     }
     fun navigateTab(destination: String) {
         if (destination != tab) {
-            navigationStack.add(currentNavigationState())
+            tabBackStack.add(tab)
+            navigationStack.clear()
             selected = null
             selectedSource = null
             selectedChapter = null
@@ -423,7 +427,7 @@ private fun NoirApp() {
         mutableStateListOf<String>().apply { addAll(OfflineChapterStore.downloadedKeys(context)) }
     }
 
-    BackHandler(enabled = showIntro || showAbout || showWhatsNew || navigationStack.isNotEmpty() || selectedChapter != null || selectedSource != null || selected != null || tab != "Home") {
+    BackHandler(enabled = showIntro || showAbout || showWhatsNew || navigationStack.isNotEmpty() || tabBackStack.isNotEmpty() || selectedChapter != null || selectedSource != null || selected != null || tab != "Home") {
         when {
             showIntro -> { showIntro = false; prefs.edit().putBoolean("intro_seen_once", true).apply() }
             showAbout -> showAbout = false
@@ -1073,7 +1077,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                 item {
                     val latest = recentlyRead.first()
                     val history = readingHistory["${latest.sourceId}:${latest.id}"]
-                    HomeContinueCard(latest, history, progressBySeries["${latest.sourceId}:${latest.id}"] ?: 0f) { onResume(latest) }
+                    HomeContinueCard(latest, history, progressBySeries["${latest.sourceId}:${latest.id}"] ?: 0f, onResume = { onResume(latest) }, onOpenDetail = { onOpen(latest) })
                 }
                 if (recentlyRead.size > 1) item {
                     HomeSeriesShelf("YOUR READING LIST", "MORE FROM YOUR JOURNEY", recentlyRead.drop(1).take(9), "CONTINUE", progressBySeries, onResume)
@@ -1200,7 +1204,7 @@ private fun NoirGlowButton(
 }
 
 @Composable
-private fun HomeContinueCard(series: Series, history: ReadingHistoryEntry?, overallProgress: Float, onResume: () -> Unit) {
+private fun HomeContinueCard(series: Series, history: ReadingHistoryEntry?, overallProgress: Float, onResume: () -> Unit, onOpenDetail: () -> Unit) {
     val pageProgress = history?.let { (it.pageNumber.toFloat() / it.pageCount.coerceAtLeast(1)).coerceIn(0f, 1f) } ?: overallProgress.coerceIn(0f, 1f)
     Column(Modifier.animateContentSize(tween(280)), verticalArrangement = Arrangement.spacedBy(11.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
@@ -1210,7 +1214,7 @@ private fun HomeContinueCard(series: Series, history: ReadingHistoryEntry?, over
             }
             NoirGlowButton("RESUME", Modifier.padding(bottom = 2.dp), compact = true, onClick = onResume)
         }
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(listOf(Color(0xFF24212A), Color(0xFF121116), Color(0xFF19161E)))).border(1.dp, Color(0xFF3A3541), RoundedCornerShape(24.dp)).noirPressScale(onResume).padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(listOf(Color(0xFF24212A), Color(0xFF121116), Color(0xFF19161E)))).border(1.dp, Color(0xFF3A3541), RoundedCornerShape(24.dp)).combinedClickable(onClick = onResume, onLongClick = onOpenDetail).padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(Modifier.width(88.dp).height(116.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFF28232E))) {
                 SeriesCover(series, Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x55000000)))))
@@ -1776,6 +1780,11 @@ private fun ReaderScreen(
     var showModeMenu by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showReaderControls by remember { mutableStateOf(true) }
+    val readerControlsAlpha by animateFloatAsState(
+        targetValue = if (showReaderControls) 1f else 0f,
+        animationSpec = tween(240, easing = FastOutSlowInEasing),
+        label = "noir-reader-controls-fade"
+    )
     var dimAmount by remember { mutableFloatStateOf(0f) }
     var fitToWidth by remember { mutableStateOf(true) }
     val readerScope = rememberCoroutineScope()
@@ -1864,7 +1873,16 @@ private fun ReaderScreen(
     }
 
     Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding()) {
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        Box(
+            Modifier.weight(1f).fillMaxWidth()
+                .pointerInput(showChapterCinema, showSettings, showModeMenu) {
+                    detectTapGestures(onTap = {
+                        if (!showChapterCinema && !showSettings && !showModeMenu && pages.isNotEmpty()) {
+                            showReaderControls = !showReaderControls
+                        }
+                    })
+                }
+        ) {
             when {
                 loading && pages.isEmpty() -> LoadingState("Loading chapter pages…")
                 error != null -> ErrorState(error)
@@ -1887,14 +1905,14 @@ private fun ReaderScreen(
             }
             if (dimAmount > 0f && pages.isNotEmpty()) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dimAmount)))
             if (nextChapterReady && hasNextChapter) {
-                Box(Modifier.align(Alignment.TopCenter).padding(top = 12.dp).clip(RoundedCornerShape(30.dp))
+                Box(Modifier.align(Alignment.TopCenter).padding(top = 12.dp).graphicsLayer { alpha = readerControlsAlpha }.clip(RoundedCornerShape(30.dp))
                     .background(Color(0xCC19171F)).border(1.dp, Color(0x557F788B), RoundedCornerShape(30.dp))
                     .padding(horizontal = 12.dp, vertical = 7.dp)) {
                     Text("NEXT CHAPTER READY", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.1.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
             if (pages.isNotEmpty()) {
-                Box(Modifier.align(Alignment.TopEnd).padding(12.dp).clip(RoundedCornerShape(30.dp))
+                Box(Modifier.align(Alignment.TopEnd).padding(12.dp).graphicsLayer { alpha = readerControlsAlpha }.clip(RoundedCornerShape(30.dp))
                     .background(Color(0xB51A1920)).border(1.dp, Color(0x557F788B), RoundedCornerShape(30.dp))
                     .padding(horizontal = 11.dp, vertical = 7.dp)) {
                     Text("${(currentPage + 1).coerceAtMost(pages.size)} / ${pages.size}", color = Color(0xFFE8E4EC), fontSize = 9.sp, letterSpacing = .8.sp)
@@ -1902,6 +1920,7 @@ private fun ReaderScreen(
             }
             if (showReaderControls) {
                 Column(Modifier.align(Alignment.CenterStart).padding(start = 7.dp)
+                    .graphicsLayer { alpha = readerControlsAlpha }
                     .clip(RoundedCornerShape(28.dp))
                     .background(Brush.verticalGradient(listOf(Color(0xE83A3442), Color(0xE8191820), Color(0xE82A2632))))
                     .border(1.dp, Color(0x777F788B), RoundedCornerShape(28.dp))
@@ -1938,6 +1957,7 @@ private fun ReaderScreen(
             }
             if (!showReaderControls) {
                 Box(Modifier.align(Alignment.CenterStart).padding(start = 3.dp).size(width = 27.dp, height = 58.dp)
+                    .graphicsLayer { alpha = 0.28f + readerControlsAlpha * 0.72f }
                     .clip(RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp)).background(Color(0xB51A1920))
                     .border(1.dp, Color(0x557F788B), RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp))
                     .clickable { showReaderControls = true }, contentAlignment = Alignment.Center) {
