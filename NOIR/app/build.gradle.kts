@@ -11,8 +11,21 @@ android {
         applicationId = "com.noir.reader"
         minSdk = 26
         targetSdk = 35
-        versionCode = 18
+        // Always increases with each CI run so every new build can install over the previous one.
+        versionCode = 1000 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
         versionName = "1.6.1"
+    }
+    // One fixed signing key for every build, so updates install over the old app without uninstalling.
+    signingConfigs {
+        create("noir") {
+            storeFile = file("noir-release.jks")
+            storePassword = "noir-sideload"
+            keyAlias = "noir"
+            keyPassword = "noir-sideload"
+        }
+    }
+    buildTypes {
+        getByName("debug") { signingConfig = signingConfigs.getByName("noir") }
     }
     buildFeatures { compose = true }
     compileOptions {
