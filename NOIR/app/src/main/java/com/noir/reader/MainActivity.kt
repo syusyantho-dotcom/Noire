@@ -687,7 +687,7 @@ private fun NoirApp() {
                     { matureContentEnabled = it; prefs.edit().putBoolean("mature_content_18_plus", it).apply() },
                     { showAbout = true }, { showWhatsNew = true }, { navigateTab(it) })
                 tab == "Home" -> HomeScreen(catalogue, loading, error, recentlyRead.toList(), saved.toList(), seriesProgress.toMap(), readingHistory.toMap(), openSeries, { item -> pendingResumeKey = "${item.sourceId}:${item.id}"; openSeries(item) }, { navigateTab(it) })
-                else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, discoveryCompactGrid, { discoveryCompactGrid = it }, matureContentEnabled, { tab = it })
+                else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, discoveryCompactGrid, { discoveryCompactGrid = it }, matureContentEnabled, { navigateTab(it) })
             }
             }
             }
