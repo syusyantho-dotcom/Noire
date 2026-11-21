@@ -2579,9 +2579,17 @@ private fun LibraryScreen(
 ) {
     val categoryOptions = listOf("All", "Reading", "Plan to read", "Completed", "On hold", "Dropped")
     var selectedCategory by remember { mutableStateOf("All") }
-    val filtered = remember(items, categories, selectedCategory) {
-        if (selectedCategory == "All") items
-        else items.filter { (categories["${it.sourceId}:${it.id}"] ?: "Reading") == selectedCategory }
+    var selectedSort by remember { mutableStateOf("Recently added") }
+    var showSortMenu by remember { mutableStateOf(false) }
+    val filtered = remember(items, categories, selectedCategory, selectedSort, progressBySeries) {
+        val categoryItems = if (selectedCategory == "All") items
+            else items.filter { (categories["${it.sourceId}:${it.id}"] ?: "Reading") == selectedCategory }
+        when (selectedSort) {
+            "Title A–Z" -> categoryItems.sortedBy { it.title.lowercase() }
+            "Most progress" -> categoryItems.sortedByDescending { progressBySeries["${it.sourceId}:${it.id}"] ?: 0f }
+            "Least progress" -> categoryItems.sortedBy { progressBySeries["${it.sourceId}:${it.id}"] ?: 0f }
+            else -> categoryItems
+        }
     }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp)) {
@@ -2589,7 +2597,24 @@ private fun LibraryScreen(
             Text("YOUR COLLECTION", color = Muted, fontSize = 9.sp, letterSpacing = 2.sp)
             Text("Library", color = White, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(5.dp))
-            Text("${items.size} SAVED TITLES", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 1.5.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${items.size} SAVED TITLES", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 1.5.sp)
+                Spacer(Modifier.weight(1f))
+                Box {
+                    Text("SORT  ·  ${selectedSort.uppercase()}  ▾", color = Color(0xFFD6C5F2), fontSize = 7.sp,
+                        letterSpacing = .7.sp, modifier = Modifier.clip(RoundedCornerShape(18.dp))
+                            .background(Color(0xFF19171E)).clickable { showSortMenu = true }
+                            .padding(horizontal = 10.dp, vertical = 7.dp))
+                    DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }, containerColor = Panel) {
+                        listOf("Recently added", "Title A–Z", "Most progress", "Least progress").forEach { sort ->
+                            DropdownMenuItem(
+                                text = { Text(sort, color = if (selectedSort == sort) Color(0xFFD6C5F2) else White) },
+                                onClick = { selectedSort = sort; showSortMenu = false }
+                            )
+                        }
+                    }
+                }
+            }
             Spacer(Modifier.height(15.dp))
             val trackedTitles = readingHistory.size
             val averageProgress = if (progressBySeries.isEmpty()) 0 else
