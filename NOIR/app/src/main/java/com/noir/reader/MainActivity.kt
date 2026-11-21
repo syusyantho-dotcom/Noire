@@ -19,6 +19,9 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -49,10 +52,14 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate as rotateDraw
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -1128,6 +1135,67 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
 
 
 @Composable
+private fun NoirGlowButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    onClick: () -> Unit
+) {
+    val transition = rememberInfiniteTransition(label = "noir-glow-border")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(3600, easing = LinearEasing)),
+        label = "noir-glow-rotation"
+    )
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier = modifier
+            .clip(shape)
+            .background(Color(0xFF08070B))
+            .drawBehind {
+                val radius = CornerRadius(size.height / 2f)
+                drawRoundRect(
+                    color = Color(0xFF8C55FF).copy(alpha = 0.13f),
+                    cornerRadius = radius,
+                    style = Stroke(width = 5.dp.toPx())
+                )
+                rotateDraw(rotation) {
+                    drawRoundRect(
+                        brush = Brush.sweepGradient(
+                            listOf(
+                                Color.Transparent,
+                                Color(0xFF713BFF).copy(alpha = 0.28f),
+                                Color(0xFFF2E8FF),
+                                Color(0xFF9A45FF),
+                                Color.Transparent
+                            ),
+                            center = center
+                        ),
+                        cornerRadius = radius,
+                        style = Stroke(width = 1.35.dp.toPx())
+                    )
+                }
+            }
+            .clickable(onClick = onClick)
+            .padding(horizontal = if (compact) 12.dp else 15.dp, vertical = if (compact) 8.dp else 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        if (!compact) Icon(Icons.Rounded.PlayArrow, null, tint = Color(0xFFE9DFFF), modifier = Modifier.size(15.dp))
+        Text(
+            label,
+            color = White,
+            fontSize = if (compact) 7.sp else 8.sp,
+            letterSpacing = 1.0.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
+        Icon(Icons.Rounded.ArrowForward, null, tint = Color(0xFFD6C5F2), modifier = Modifier.size(13.dp))
+    }
+}
+
+@Composable
 private fun HomeContinueCard(series: Series, history: ReadingHistoryEntry?, overallProgress: Float, onResume: () -> Unit) {
     val pageProgress = history?.let { (it.pageNumber.toFloat() / it.pageCount.coerceAtLeast(1)).coerceIn(0f, 1f) } ?: overallProgress.coerceIn(0f, 1f)
     Column(Modifier.animateContentSize(tween(280)), verticalArrangement = Arrangement.spacedBy(11.dp)) {
@@ -1136,7 +1204,7 @@ private fun HomeContinueCard(series: Series, history: ReadingHistoryEntry?, over
                 Text("YOUR STORY IS WAITING", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 1.9.sp)
                 Text("Continue reading", color = White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.35).sp)
             }
-            Text("RESUME ↗", color = Color(0xFFD8C5F0), fontSize = 8.sp, letterSpacing = 1.sp, modifier = Modifier.clickable(onClick = onResume).padding(bottom = 3.dp))
+            NoirGlowButton("RESUME", Modifier.padding(bottom = 2.dp), compact = true, onClick = onResume)
         }
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(listOf(Color(0xFF24212A), Color(0xFF121116), Color(0xFF19161E)))).border(1.dp, Color(0xFF3A3541), RoundedCornerShape(24.dp)).noirPressScale(onResume).padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(Modifier.width(88.dp).height(116.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFF28232E))) {
@@ -1536,20 +1604,10 @@ private fun DetailScreen(
                         }
                         if (chapters.isNotEmpty()) {
                             Spacer(Modifier.height(16.dp))
-                            Row(
-                                Modifier.clip(RoundedCornerShape(13.dp))
-                                    .background(Color(0xCC17141C))
-                                    .border(1.dp, Color(0x557E6B91), RoundedCornerShape(13.dp))
-                                    .clickable { onChapter(chapters.first()) }
-                                    .padding(horizontal = 15.dp, vertical = 11.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Rounded.PlayArrow, null, tint = White, modifier = Modifier.size(17.dp))
-                                Spacer(Modifier.width(7.dp))
-                                Text("OPEN FIRST LISTED CHAPTER", color = White, fontSize = 8.sp, letterSpacing = 1.1.sp, fontWeight = FontWeight.Bold)
-                                Spacer(Modifier.width(8.dp))
-                                Icon(Icons.Rounded.ArrowForward, null, tint = Color(0xFFD6C5F2), modifier = Modifier.size(13.dp))
-                            }
+                            NoirGlowButton(
+                                "OPEN FIRST LISTED CHAPTER",
+                                onClick = { onChapter(chapters.first()) }
+                            )
                         }
                     }
                 }
@@ -2653,10 +2711,34 @@ private fun BottomNav(tab: String, onTab: (String) -> Unit) {
 }
 
 @Composable
+private fun NoirLoadingMark() {
+    val transition = rememberInfiniteTransition(label = "noir-loading-mark")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing)),
+        label = "noir-loading-rotation"
+    )
+    val pulse by transition.animateFloat(
+        initialValue = 0.62f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(850), repeatMode = androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "noir-loading-pulse"
+    )
+    Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.fillMaxSize().rotate(rotation)
+                .border(1.2.dp, Brush.sweepGradient(listOf(Color.Transparent, Color(0xFF8C55FF), Color(0xFFE9DFFF), Color.Transparent)), CircleShape)
+        )
+        Icon(Icons.Rounded.AutoStories, null, tint = Color(0xFFDCCBFA), modifier = Modifier.size(15.dp).graphicsLayer { alpha = pulse })
+    }
+}
+
+@Composable
 private fun LoadingState(message: String) {
     Box(Modifier.fillMaxWidth().padding(30.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(color = Silver, strokeWidth = 2.dp, modifier = Modifier.size(26.dp))
+            NoirLoadingMark()
             Spacer(Modifier.height(12.dp))
             Text(message, color = Muted, fontSize = 11.sp)
         }
