@@ -2779,9 +2779,20 @@ private fun NoirLogoMark(
 @Composable
 private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
     val context = LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
     val alpha = remember { Animatable(0f) }
-    val logoScale = remember { Animatable(0.84f) }
-    val logoRotation = remember { Animatable(-4f) }
+    val panelsIn = remember { Animatable(0f) }
+    val panelsOut = remember { Animatable(0f) }
+    val logoAlpha = remember { Animatable(0f) }
+    val logoScale = remember { Animatable(0.76f) }
+    val panelSpecs = listOf(
+        Triple(-112f, -108f, -13f),
+        Triple(112f, -104f, 11f),
+        Triple(-116f, 108f, 9f),
+        Triple(116f, 110f, -10f),
+        Triple(0f, -178f, 4f),
+        Triple(0f, 178f, -5f)
+    )
     LaunchedEffect(Unit) {
         var player: MediaPlayer? = null
         try {
@@ -2794,13 +2805,16 @@ private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
                         .onFailure { runCatching { mediaPlayer.release() }; player = null }
                 }
             }
+            alpha.animateTo(1f, tween(380))
+            panelsIn.animateTo(1f, tween(1050, easing = FastOutSlowInEasing))
+            delay(280)
             kotlinx.coroutines.coroutineScope {
-                launch { alpha.animateTo(1f, tween(520)) }
-                launch { logoScale.animateTo(1f, tween(760)) }
-                launch { logoRotation.animateTo(0f, tween(760)) }
+                launch { panelsOut.animateTo(1f, tween(720, easing = FastOutSlowInEasing)) }
+                launch { logoAlpha.animateTo(1f, tween(560)) }
+                launch { logoScale.animateTo(1f, tween(820, easing = FastOutSlowInEasing)) }
             }
-            delay(780)
-            alpha.animateTo(0f, tween(380))
+            delay(620)
+            alpha.animateTo(0f, tween(360))
         } catch (_: Exception) {
         } finally {
             player?.let { mediaPlayer ->
@@ -2811,15 +2825,110 @@ private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
         }
     }
     Box(Modifier.fillMaxSize().background(Black).graphicsLayer { this.alpha = alpha.value }, contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            NoirLogoMark(96.dp, Modifier.graphicsLayer { scaleX = logoScale.value; scaleY = logoScale.value; rotationZ = logoRotation.value })
-            Spacer(Modifier.height(8.dp))
+        panelSpecs.forEachIndexed { index, spec ->
+            NoirIntroPanel(
+                index = index,
+                targetX = spec.first,
+                targetY = spec.second,
+                tilt = spec.third,
+                enter = panelsIn.value,
+                dissolve = panelsOut.value,
+                density = density
+            )
+        }
+        Column(
+            modifier = Modifier.graphicsLayer {
+                alpha = logoAlpha.value
+                scaleX = logoScale.value
+                scaleY = logoScale.value
+            },
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            NoirLogoMark(88.dp)
+            Spacer(Modifier.height(2.dp))
             Image(
                 painter = painterResource(id = R.drawable.noir_intro_wordmark),
                 contentDescription = "NOIR — Manga, Manhwa, More",
-                modifier = Modifier.width(264.dp).height(156.dp),
+                modifier = Modifier.width(244.dp).height(138.dp),
                 contentScale = ContentScale.Fit
             )
+        }
+        Text(
+            "A UNIVERSE BETWEEN THE PAGES",
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 54.dp)
+                .graphicsLayer { this.alpha = logoAlpha.value * (1f - panelsOut.value * 0.15f) },
+            color = Color(0xFFB9A7D2),
+            fontSize = 8.sp,
+            letterSpacing = 2.6.sp,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun NoirIntroPanel(
+    index: Int,
+    targetX: Float,
+    targetY: Float,
+    tilt: Float,
+    enter: Float,
+    dissolve: Float,
+    density: androidx.compose.ui.unit.Density
+) {
+    val fromX = if (targetX < 0f) -300f else if (targetX > 0f) 300f else 0f
+    val fromY = if (targetY < 0f) -260f else if (targetY > 0f) 260f else -280f
+    val stagger = (index % 3) * 0.08f
+    val progress = ((enter - stagger) / (1f - stagger)).coerceIn(0f, 1f)
+    val driftX = with(density) { (fromX * (1f - progress) - targetX * dissolve).dp.toPx() }
+    val driftY = with(density) { (fromY * (1f - progress) - targetY * dissolve).dp.toPx() }
+    val panelScale = (0.58f + 0.42f * progress) * (1f - 0.82f * dissolve)
+    val panelAlpha = progress * (1f - dissolve)
+    Box(
+        Modifier
+            .offset(x = targetX.dp, y = targetY.dp)
+            .size(width = 104.dp, height = 142.dp)
+            .graphicsLayer {
+                translationX = driftX
+                translationY = driftY
+                rotationZ = tilt * (1f - dissolve) + (1f - progress) * tilt * 1.8f
+                scaleX = panelScale
+                scaleY = panelScale
+                alpha = panelAlpha
+            }
+            .clip(RoundedCornerShape(8.dp))
+            .background(Brush.linearGradient(
+                listOf(Color(0xFF29232F), Color(0xFF111014), Color(0xFF33263D))
+            ))
+            .border(1.dp, Color(0x887D6A91), RoundedCornerShape(8.dp))
+            .padding(8.dp)
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            Text(
+                listOf("CHAPTER 01", "UNKNOWN", "THE BEGINNING", "NO SIGNAL", "PAGE 001", "BEYOND")[index],
+                modifier = Modifier.align(Alignment.TopStart),
+                color = Color(0xFFD8CBE7),
+                fontSize = 5.sp,
+                letterSpacing = 1.sp
+            )
+            Box(
+                Modifier.align(Alignment.Center).fillMaxWidth(0.72f).height(68.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Brush.radialGradient(
+                        listOf(Color(0xFF8C70AA).copy(alpha = 0.62f), Color(0xFF29232F), Color(0xFF151319))
+                    ))
+            )
+            Box(Modifier.align(Alignment.Center).padding(top = 8.dp).size(30.dp)
+                .border(1.dp, Color(0x99E5D9F0), CircleShape))
+            Box(Modifier.align(Alignment.Center).padding(top = 8.dp).width(1.dp).height(62.dp)
+                .background(Color(0x99D8C8E8)))
+            Column(Modifier.align(Alignment.BottomStart), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                repeat(3) { line ->
+                    Box(Modifier.width((62 - line * 10).dp).height(2.dp)
+                        .background(Color(0x668E8299), RoundedCornerShape(2.dp)))
+                }
+            }
+            Box(Modifier.align(Alignment.BottomEnd).size(13.dp)
+                .background(Color(0xFFBDA7D4), RoundedCornerShape(2.dp)))
         }
     }
 }
