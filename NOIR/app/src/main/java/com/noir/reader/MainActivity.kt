@@ -1674,12 +1674,21 @@ private fun DetailScreen(
                             )
                             if (resumeChapter != null && readingHistoryEntry != null) {
                                 Spacer(Modifier.height(7.dp))
-                                Text(
-                                    "RESUME AT ${readingHistoryEntry.chapterName.uppercase()}  ·  PAGE ${readingHistoryEntry.pageNumber}",
-                                    color = Color(0xFFB8A9C8),
-                                    fontSize = 8.sp,
-                                    letterSpacing = 1.sp
-                                )
+                                val chapterProgress = (readingHistoryEntry.pageNumber.toFloat() / readingHistoryEntry.pageCount.coerceAtLeast(1)).coerceIn(0f, 1f)
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "${readingHistoryEntry.chapterName.uppercase()}  ·  PAGE ${readingHistoryEntry.pageNumber}/${readingHistoryEntry.pageCount}",
+                                        color = Color(0xFFB8A9C8), fontSize = 8.sp, letterSpacing = .7.sp,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text("${(chapterProgress * 100).roundToInt()}%", color = Color(0xFFD6C5F2), fontSize = 8.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                                Spacer(Modifier.height(7.dp))
+                                Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(3.dp)).background(Color(0xFF39333F))) {
+                                    Box(Modifier.fillMaxWidth(chapterProgress).fillMaxHeight().background(
+                                        Brush.horizontalGradient(listOf(Color(0xFF78618E), Color(0xFFD6C5F2))), RoundedCornerShape(3.dp)
+                                    ))
+                                }
                             }
                         }
                     }
