@@ -1433,10 +1433,10 @@ private fun DiscoveryCoverTile(series: Series, compact: Boolean, alternateHeight
         else -> 0.62f
     }
     val glowTransition = rememberInfiniteTransition(label = "cover-outline-glow")
-    val glowRotation by glowTransition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(animation = tween(3600, easing = LinearEasing)),
-        label = "outline-angle"
+    val glowProgress by glowTransition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(animation = tween(3000, easing = LinearEasing)),
+        label = "outline-travel-progress"
     )
     val coverShape = RoundedCornerShape(if (compact) 13.dp else 17.dp)
     Column(Modifier.fillMaxWidth().animateContentSize(tween(260))
@@ -1447,31 +1447,19 @@ private fun DiscoveryCoverTile(series: Series, compact: Boolean, alternateHeight
             .drawWithContent {
                 drawContent()
                 if (!compact) {
-                    val edgeBrush = Brush.sweepGradient(
-                        colors = listOf(
-                            Color.Transparent, Color.Transparent,
-                            Color(0x336F55A0), Color(0xFFE8D8FF),
-                            Color(0xFF9B75D0), Color.Transparent,
-                            Color.Transparent
-                        ),
-                        center = center
+                    drawRoundRect(
+                        color = Color(0x667B5AA8),
+                        topLeft = Offset(1.dp.toPx(), 1.dp.toPx()),
+                        size = androidx.compose.ui.geometry.Size(size.width - 2.dp.toPx(), size.height - 2.dp.toPx()),
+                        cornerRadius = CornerRadius(17.dp.toPx()),
+                        style = Stroke(width = 1.1.dp.toPx())
                     )
-                    rotateDraw(glowRotation, pivot = center) {
-                        drawRoundRect(
-                            brush = edgeBrush,
-                            topLeft = Offset(1.dp.toPx(), 1.dp.toPx()),
-                            size = androidx.compose.ui.geometry.Size(size.width - 2.dp.toPx(), size.height - 2.dp.toPx()),
-                            cornerRadius = CornerRadius(17.dp.toPx()),
-                            style = Stroke(width = 3.dp.toPx())
-                        )
-                        drawRoundRect(
-                            brush = edgeBrush,
-                            topLeft = Offset(1.dp.toPx(), 1.dp.toPx()),
-                            size = androidx.compose.ui.geometry.Size(size.width - 2.dp.toPx(), size.height - 2.dp.toPx()),
-                            cornerRadius = CornerRadius(17.dp.toPx()),
-                            style = Stroke(width = 1.15.dp.toPx())
-                        )
-                    }
+                    drawTravelingOutlineGlow(
+                        cornerRadius = 17.dp.toPx(),
+                        progress = glowProgress,
+                        inset = 1.5.dp.toPx(),
+                        glowColor = Color(0xFFDCC5FF)
+                    )
                 }
             }) {
             SeriesCover(series, Modifier.fillMaxSize())
@@ -1720,6 +1708,66 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
 }
 
 
+/**
+ * Draws a bright comet that physically travels along a rounded-rectangle perimeter.
+ * The card/content never rotates; only sampled points on the border are animated.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTravelingOutlineGlow(
+    cornerRadius: Float,
+    progress: Float,
+    inset: Float,
+    glowColor: Color
+) {
+    val left = inset
+    val top = inset
+    val right = size.width - inset
+    val bottom = size.height - inset
+    if (right <= left || bottom <= top) return
+
+    val outline = android.graphics.Path().apply {
+        addRoundRect(
+            android.graphics.RectF(left, top, right, bottom),
+            cornerRadius.coerceAtMost((bottom - top) / 2f),
+            cornerRadius.coerceAtMost((bottom - top) / 2f),
+            android.graphics.Path.Direction.CW
+        )
+    }
+    val measure = android.graphics.PathMeasure(outline, false)
+    val perimeter = measure.length
+    if (perimeter <= 0f) return
+
+    val position = FloatArray(2)
+    // A tapered trail followed by a hot white-violet leading point.
+    val trail = listOf(
+        -0.105f to 0.10f, -0.088f to 0.14f, -0.071f to 0.19f,
+        -0.054f to 0.27f, -0.037f to 0.38f, -0.020f to 0.58f,
+        -0.008f to 0.82f, 0.000f to 1.00f
+    )
+    trail.forEachIndexed { index, (offset, strength) ->
+        val distance = (((progress + offset + 1f) % 1f) * perimeter)
+        if (measure.getPosTan(distance, position, null)) {
+            val centerPoint = Offset(position[0], position[1])
+            drawCircle(
+                color = glowColor.copy(alpha = 0.13f * strength),
+                radius = (7.5f + index * 0.12f).dp.toPx(),
+                center = centerPoint
+            )
+            drawCircle(
+                color = glowColor.copy(alpha = 0.42f * strength),
+                radius = (3.8f + index * 0.08f).dp.toPx(),
+                center = centerPoint
+            )
+            if (index >= 5) {
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.92f * strength),
+                    radius = (1.15f + if (index == 7) 0.65f else 0f).dp.toPx(),
+                    center = centerPoint
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun NoirGlowButton(
     label: String,
@@ -1730,11 +1778,11 @@ private fun NoirGlowButton(
     // All motion here uses stable Compose animation and drawing APIs:
     // an endlessly moving, narrow sweep highlight with a soft violet edge and bright core.
     val transition = rememberInfiniteTransition(label = "noir-glow-border")
-    val rotation by transition.animateFloat(
+    val glowProgress by transition.animateFloat(
         initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(2800, easing = LinearEasing)),
-        label = "noir-glow-rotation"
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing)),
+        label = "noir-glow-travel-progress"
     )
     val shape = RoundedCornerShape(50)
     Row(
@@ -1748,32 +1796,12 @@ private fun NoirGlowButton(
                     cornerRadius = radius,
                     style = Stroke(width = 4.dp.toPx())
                 )
-                rotateDraw(rotation) {
-                    val travelingHighlight = Brush.sweepGradient(
-                        colorStops = arrayOf(
-                            0.00f to Color.Transparent,
-                            0.405f to Color.Transparent,
-                            0.445f to Color(0xFF713BFF).copy(alpha = 0.20f),
-                            0.475f to Color(0xFFB77BFF).copy(alpha = 0.92f),
-                            0.495f to Color(0xFFFFFFFF),
-                            0.515f to Color(0xFFDCC4FF),
-                            0.545f to Color(0xFF8B43FF).copy(alpha = 0.72f),
-                            0.585f to Color.Transparent,
-                            1.00f to Color.Transparent
-                        ),
-                        center = center
-                    )
-                    drawRoundRect(
-                        brush = travelingHighlight,
-                        cornerRadius = radius,
-                        style = Stroke(width = 4.2.dp.toPx())
-                    )
-                    drawRoundRect(
-                        brush = travelingHighlight,
-                        cornerRadius = radius,
-                        style = Stroke(width = 1.15.dp.toPx())
-                    )
-                }
+                drawTravelingOutlineGlow(
+                    cornerRadius = (size.height / 2f) - 2.dp.toPx(),
+                    progress = glowProgress,
+                    inset = 2.dp.toPx(),
+                    glowColor = Color(0xFFD8B9FF)
+                )
             }
             .clickable(onClick = onClick)
             .padding(horizontal = if (compact) 12.dp else 15.dp, vertical = if (compact) 8.dp else 11.dp),
@@ -2737,12 +2765,13 @@ private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, cont
                     else { panX += pan.x; panY += pan.y }
                 }
             }
-            .pointerInput(pageUrl) {
-                detectTapGestures(onTap = { onTap() }, onDoubleTap = {
+            .combinedClickable(
+                onClick = onTap,
+                onDoubleClick = {
                     if (zoom > 1.05f) { zoom = 1f; panX = 0f; panY = 0f }
                     else zoom = 2.25f
-                })
-            })
+                }
+            ))
 }
 
 @Composable
@@ -2860,14 +2889,6 @@ private fun ReaderScreen(
         }
     }
 
-    val baseFlingBehavior = androidx.compose.foundation.gestures.ScrollableDefaults.flingBehavior()
-    val readerFlingBehavior = remember(baseFlingBehavior) {
-        object : androidx.compose.foundation.gestures.FlingBehavior {
-            override suspend fun androidx.compose.foundation.gestures.ScrollScope.performFling(initialVelocity: Float): Float {
-                return with(baseFlingBehavior) { performFling(initialVelocity * 0.92f) }
-            }
-        }
-    }
     val movePage: (Int) -> Unit = { direction ->
         if (pages.isNotEmpty()) readerScope.launch {
             val target = (currentPage + direction).coerceIn(0, pages.lastIndex)
@@ -2878,13 +2899,6 @@ private fun ReaderScreen(
     Column(Modifier.fillMaxSize().background(readerCanvas).statusBarsPadding()) {
         Box(
             Modifier.weight(1f).fillMaxWidth()
-                .pointerInput(showChapterCinema, showSettings, showModeMenu) {
-                    detectTapGestures(onTap = {
-                        if (!showChapterCinema && !showSettings && !showModeMenu && pages.isNotEmpty()) {
-                            showReaderControls = !showReaderControls
-                        }
-                    })
-                }
         ) {
             when {
                 loading && pages.isEmpty() -> LoadingState("Loading chapter pages…")
@@ -2912,7 +2926,7 @@ private fun ReaderScreen(
                     )
                 }
                 else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
-                    flingBehavior = readerFlingBehavior,
+                    userScrollEnabled = true,
                     verticalArrangement = Arrangement.spacedBy(if (readerMode == "Webtoon") 0.dp else pageGap.dp),
                     contentPadding = PaddingValues(bottom = 18.dp)) {
                     items(count = pages.size, key = { index -> "reader-page-$index" }, contentType = { "reader-page" }) { index ->
