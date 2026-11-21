@@ -1918,10 +1918,13 @@ private fun ReaderScreen(
                     Text("${(currentPage + 1).coerceAtMost(pages.size)} / ${pages.size}", color = Color(0xFFE8E4EC), fontSize = 9.sp, letterSpacing = .8.sp)
                 }
             }
-            if (showReaderControls) {
-                Column(Modifier.align(Alignment.CenterStart).padding(start = 7.dp)
-                    .graphicsLayer { alpha = readerControlsAlpha }
-                    .clip(RoundedCornerShape(28.dp))
+            AnimatedVisibility(
+                visible = showReaderControls,
+                enter = fadeIn(tween(240)),
+                exit = fadeOut(tween(240)),
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 7.dp)
+            ) {
+                Column(Modifier.clip(RoundedCornerShape(28.dp))
                     .background(Brush.verticalGradient(listOf(Color(0xE83A3442), Color(0xE8191820), Color(0xE82A2632))))
                     .border(1.dp, Color(0x777F788B), RoundedCornerShape(28.dp))
                     .padding(horizontal = 3.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
