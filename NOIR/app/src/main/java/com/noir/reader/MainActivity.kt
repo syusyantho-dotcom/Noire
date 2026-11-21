@@ -577,6 +577,23 @@ private fun NoirApp() {
         catch (e: Exception) { error = e.message ?: "Could not load chapters." }
         finally { loading = false }
     }
+    val refreshChapters: () -> Unit = {
+        val item = selected
+        if (item != null && !loading) {
+            scope.launch {
+                loading = true
+                error = null
+                try {
+                    // Keep the existing list visible until the source returns its latest feed.
+                    chapters = SourceRegistry.byId(item.sourceId)?.chapters(item).orEmpty()
+                } catch (e: Exception) {
+                    error = e.message ?: "Could not refresh chapters."
+                } finally {
+                    loading = false
+                }
+            }
+        }
+    }
     LaunchedEffect(pendingResumeKey, selected?.id, selected?.sourceId, chapters) {
         val item = selected ?: return@LaunchedEffect
         val key = "${item.sourceId}:${item.id}"
@@ -691,6 +708,7 @@ private fun NoirApp() {
                     bookmarkedChapterKeys.toSet(), downloadedChapterKeys.toSet(),
                     downloadingChapterKey, downloadProgress,
                     readingHistory["${selected!!.sourceId}:${selected!!.id}"], loading, error,
+                    onRefreshChapters = refreshChapters,
                     onBack = { goBack() },
                     onSave = {
                         val item = selected!!
@@ -1488,11 +1506,13 @@ private fun NoirGlowButton(
     compact: Boolean = false,
     onClick: () -> Unit
 ) {
+    // All motion here uses stable Compose animation and drawing APIs:
+    // an endlessly moving, narrow sweep highlight with a soft violet edge and bright core.
     val transition = rememberInfiniteTransition(label = "noir-glow-border")
     val rotation by transition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(3600, easing = LinearEasing)),
+        animationSpec = infiniteRepeatable(tween(2800, easing = LinearEasing)),
         label = "noir-glow-rotation"
     )
     val shape = RoundedCornerShape(50)
@@ -1503,24 +1523,34 @@ private fun NoirGlowButton(
             .drawBehind {
                 val radius = CornerRadius(size.height / 2f)
                 drawRoundRect(
-                    color = Color(0xFF8C55FF).copy(alpha = 0.13f),
+                    color = Color(0xFF8C55FF).copy(alpha = 0.10f),
                     cornerRadius = radius,
-                    style = Stroke(width = 5.dp.toPx())
+                    style = Stroke(width = 4.dp.toPx())
                 )
                 rotateDraw(rotation) {
-                    drawRoundRect(
-                        brush = Brush.sweepGradient(
-                            listOf(
-                                Color.Transparent,
-                                Color(0xFF713BFF).copy(alpha = 0.28f),
-                                Color(0xFFF2E8FF),
-                                Color(0xFF9A45FF),
-                                Color.Transparent
-                            ),
-                            center = center
+                    val travelingHighlight = Brush.sweepGradient(
+                        colorStops = arrayOf(
+                            0.00f to Color.Transparent,
+                            0.405f to Color.Transparent,
+                            0.445f to Color(0xFF713BFF).copy(alpha = 0.20f),
+                            0.475f to Color(0xFFB77BFF).copy(alpha = 0.92f),
+                            0.495f to Color(0xFFFFFFFF),
+                            0.515f to Color(0xFFDCC4FF),
+                            0.545f to Color(0xFF8B43FF).copy(alpha = 0.72f),
+                            0.585f to Color.Transparent,
+                            1.00f to Color.Transparent
                         ),
+                        center = center
+                    )
+                    drawRoundRect(
+                        brush = travelingHighlight,
                         cornerRadius = radius,
-                        style = Stroke(width = 1.35.dp.toPx())
+                        style = Stroke(width = 4.2.dp.toPx())
+                    )
+                    drawRoundRect(
+                        brush = travelingHighlight,
+                        cornerRadius = radius,
+                        style = Stroke(width = 1.15.dp.toPx())
                     )
                 }
             }
@@ -1907,6 +1937,7 @@ private fun DetailScreen(
     series: Series, chapters: List<Chapter>, saved: Boolean, bookmarkedChapterKeys: Set<String>,
     downloadedChapterKeys: Set<String>, downloadingChapterKey: String?, downloadProgress: Int,
     readingHistoryEntry: ReadingHistoryEntry?, loading: Boolean, error: String?,
+    onRefreshChapters: () -> Unit,
     onBack: () -> Unit, onSave: () -> Unit, onToggleChapterBookmark: (Chapter) -> Unit,
     onChapter: (Chapter) -> Unit, onDownloadChapter: (Chapter) -> Unit
 ) {
@@ -2084,6 +2115,31 @@ private fun DetailScreen(
                     Column(horizontalAlignment = Alignment.End) {
                         Text(chapters.size.toString().padStart(2, '0'), color = White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                         Text("AVAILABLE", color = Muted, fontSize = 7.sp, letterSpacing = 1.2.sp)
+                        Spacer(Modifier.height(5.dp))
+                        Row(
+                            modifier = Modifier.clip(RoundedCornerShape(18.dp))
+                                .background(Color(0xFF211D28))
+                                .border(1.dp, Color(0xFF51445F), RoundedCornerShape(18.dp))
+                                .clickable(enabled = !loading, onClick = onRefreshChapters)
+                                .padding(horizontal = 9.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            if (loading && chapters.isNotEmpty()) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(10.dp),
+                                    color = Color(0xFFD6C5F2),
+                                    strokeWidth = 1.5.dp
+                                )
+                            } else {
+                                Icon(Icons.Rounded.Refresh, null, tint = Color(0xFFD6C5F2), modifier = Modifier.size(11.dp))
+                            }
+                            Text(
+                                if (loading && chapters.isNotEmpty()) "CHECKING" else "REFRESH",
+                                color = Color(0xFFD6C5F2), fontSize = 7.sp, letterSpacing = .7.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }
