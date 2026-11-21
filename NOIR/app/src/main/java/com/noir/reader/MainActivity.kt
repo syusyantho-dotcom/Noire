@@ -1743,7 +1743,7 @@ private fun DetailScreen(
 }
 
 @Composable
-private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, contentScale: ContentScale) {
+private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, contentScale: ContentScale, onTap: () -> Unit = {}) {
     var zoom by remember(pageUrl) { mutableFloatStateOf(1f) }
     var panX by remember(pageUrl) { mutableFloatStateOf(0f) }
     var panY by remember(pageUrl) { mutableFloatStateOf(0f) }
@@ -1761,7 +1761,7 @@ private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, cont
                 }
             }
             .pointerInput(pageUrl) {
-                detectTapGestures(onDoubleTap = {
+                detectTapGestures(onTap = { onTap() }, onDoubleTap = {
                     if (zoom > 1.05f) { zoom = 1f; panX = 0f; panY = 0f }
                     else zoom = 2.25f
                 })
@@ -1892,14 +1892,16 @@ private fun ReaderScreen(
                     reverseLayout = readerMode == "Right to left", key = { index -> "reader-page-$index" }
                 ) { index ->
                     ReaderPageImage(pageUrl = pages[index], modifier = Modifier.fillMaxSize(),
-                        contentScale = if (fitToWidth) ContentScale.FillWidth else ContentScale.Fit)
+                        contentScale = if (fitToWidth) ContentScale.FillWidth else ContentScale.Fit,
+                        onTap = { if (!showChapterCinema && !showSettings && !showModeMenu) showReaderControls = !showReaderControls })
                 }
                 else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
                     flingBehavior = readerFlingBehavior,
                     verticalArrangement = Arrangement.spacedBy(if (readerMode == "Webtoon") 0.dp else 1.dp),
                     contentPadding = PaddingValues(bottom = 18.dp)) {
                     items(count = pages.size, key = { index -> "reader-page-$index" }, contentType = { "reader-page" }) { index ->
-                        ReaderPageImage(pageUrl = pages[index], modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
+                        ReaderPageImage(pageUrl = pages[index], modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth,
+                            onTap = { if (!showChapterCinema && !showSettings && !showModeMenu) showReaderControls = !showReaderControls })
                     }
                 }
             }
