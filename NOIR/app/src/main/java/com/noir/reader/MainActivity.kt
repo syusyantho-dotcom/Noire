@@ -158,7 +158,10 @@ private fun NoirApp() {
         mutableStateListOf<String>().apply {
             val raw = sourcePrefs.getString("enabled_sources", null)
             if (raw == null) {
-                add("mangadex")
+                SourceRegistry.sources.firstOrNull {
+                    it.name.contains("Ainzscan", ignoreCase = true) ||
+                        it.id.contains("ainzscan", ignoreCase = true)
+                }?.let { add(it.id) }
             } else {
                 runCatching {
                     val stored = JSONArray(raw)
@@ -166,6 +169,14 @@ private fun NoirApp() {
                         val id = stored.optString(index)
                         if (id.isNotBlank()) add(id)
                     }
+                }
+                // Migrate the previous first-install default from MangaDex to Ainzscan.
+                if (size == 1 && firstOrNull() == "mangadex") {
+                    clear()
+                    SourceRegistry.sources.firstOrNull {
+                        it.name.contains("Ainzscan", ignoreCase = true) ||
+                            it.id.contains("ainzscan", ignoreCase = true)
+                    }?.let { add(it.id) }
                 }
             }
         }
@@ -178,6 +189,10 @@ private fun NoirApp() {
         sourcePrefs.edit().putString("enabled_sources", stored.toString()).apply()
     }
     var tab by remember { mutableStateOf("Home") }
+    var discoveryCompactGrid by remember { mutableStateOf(prefs.getBoolean("discovery_compact_grid", false)) }
+    LaunchedEffect(discoveryCompactGrid) {
+        prefs.edit().putBoolean("discovery_compact_grid", discoveryCompactGrid).apply()
+    }
     var introSound by remember { mutableStateOf(prefs.getBoolean("intro_sound", true)) }
     var launchIntro by remember { mutableStateOf(prefs.getBoolean("launch_intro", true)) }
     var matureContentEnabled by remember { mutableStateOf(prefs.getBoolean("mature_content_18_plus", false)) }
@@ -660,7 +675,7 @@ private fun NoirApp() {
                     { matureContentEnabled = it; prefs.edit().putBoolean("mature_content_18_plus", it).apply() },
                     { showAbout = true }, { showWhatsNew = true }, { navigateTab(it) })
                 tab == "Home" -> HomeScreen(catalogue, loading, error, recentlyRead.toList(), saved.toList(), seriesProgress.toMap(), readingHistory.toMap(), openSeries, { item -> pendingResumeKey = "${item.sourceId}:${item.id}"; openSeries(item) }, { navigateTab(it) })
-                else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, matureContentEnabled, { tab = it })
+                else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, discoveryCompactGrid, { discoveryCompactGrid = it }, matureContentEnabled, { tab = it })
             }
             }
             }
@@ -685,9 +700,9 @@ private fun NoirApp() {
 private fun CatalogueScreen(
     tab: String, query: String, onQuery: (String) -> Unit, catalogue: List<Series>,
     loading: Boolean, error: String?, hasMore: Boolean, loadingMore: Boolean, onLoadMore: () -> Unit,
-    onOpen: (Series) -> Unit, matureContentEnabled: Boolean, onTab: (String) -> Unit
+    onOpen: (Series) -> Unit, compactGrid: Boolean, onCompactGridChange: (Boolean) -> Unit,
+    matureContentEnabled: Boolean, onTab: (String) -> Unit
 ) {
-    var compactGrid by remember { mutableStateOf(false) }
     var sortMode by remember { mutableStateOf("FOR YOU") }
     val sortedCatalogue = remember(catalogue, sortMode) {
         when (sortMode) {
@@ -796,14 +811,14 @@ private fun CatalogueScreen(
                                 Box(Modifier.size(width = 38.dp, height = 34.dp)
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(if (!compactGrid) Color(0xFF393044) else Color.Transparent)
-                                    .clickable { compactGrid = false }, contentAlignment = Alignment.Center) {
+                                    .clickable { onCompactGridChange(false) }, contentAlignment = Alignment.Center) {
                                     Icon(Icons.Rounded.GridView, null,
                                         tint = if (!compactGrid) Color(0xFFE8DDF2) else Muted, modifier = Modifier.size(18.dp))
                                 }
                                 Box(Modifier.size(width = 38.dp, height = 34.dp)
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(if (compactGrid) Color(0xFF393044) else Color.Transparent)
-                                    .clickable { compactGrid = true }, contentAlignment = Alignment.Center) {
+                                    .clickable { onCompactGridChange(true) }, contentAlignment = Alignment.Center) {
                                     Icon(Icons.Rounded.ViewModule, null,
                                         tint = if (compactGrid) Color(0xFFE8DDF2) else Muted, modifier = Modifier.size(18.dp))
                                 }
