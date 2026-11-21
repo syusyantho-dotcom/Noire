@@ -447,20 +447,26 @@ private fun NoirApp() {
     }
     var routeVisible by remember(routeKey) { mutableStateOf(false) }
     LaunchedEffect(routeKey) { routeVisible = true }
+    val enteringReader = selectedChapter != null
     val routeAlpha by animateFloatAsState(
         if (routeVisible) 1f else 0f,
-        tween(230, easing = FastOutSlowInEasing),
+        tween(if (enteringReader) 420 else 230, delayMillis = if (enteringReader) 35 else 0, easing = FastOutSlowInEasing),
         label = "noir-route-fade"
     )
     val routeScale by animateFloatAsState(
-        if (routeVisible) 1f else 0.982f,
-        spring(dampingRatio = 0.88f, stiffness = 280f),
+        if (routeVisible) 1f else if (enteringReader) 0.955f else 0.982f,
+        spring(dampingRatio = if (enteringReader) 0.82f else 0.88f, stiffness = if (enteringReader) 190f else 280f),
         label = "noir-route-scale"
     )
     val routeOffset by animateFloatAsState(
-        if (routeVisible) 0f else 16f,
-        tween(280, easing = FastOutSlowInEasing),
+        if (routeVisible) 0f else if (enteringReader) 38f else 16f,
+        tween(if (enteringReader) 460 else 280, easing = FastOutSlowInEasing),
         label = "noir-route-slide"
+    )
+    val routeCorner by animateFloatAsState(
+        if (enteringReader && !routeVisible) 28f else 0f,
+        tween(430, easing = FastOutSlowInEasing),
+        label = "noir-reader-entry-corners"
     )
 
     LaunchedEffect(query, tab, activeSourceIds) {
@@ -579,6 +585,10 @@ private fun NoirApp() {
                 scaleX = routeScale
                 scaleY = routeScale
                 translationY = routeOffset * density
+                if (enteringReader) {
+                    shape = RoundedCornerShape(routeCorner.dp)
+                    clip = true
+                }
             }) {
             key(routeKey) {
             when {
