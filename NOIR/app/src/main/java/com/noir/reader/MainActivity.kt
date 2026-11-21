@@ -2103,11 +2103,23 @@ private fun ReaderScreen(
                 pages.isEmpty() -> EmptyState("No pages available", "This chapter may not have readable pages.")
                 isPaged -> androidx.compose.foundation.pager.HorizontalPager(
                     state = pagerState, modifier = Modifier.fillMaxSize(),
+                    pageSpacing = 10.dp,
                     reverseLayout = readerMode == "Right to left", key = { index -> "reader-page-$index" }
                 ) { index ->
-                    ReaderPageImage(pageUrl = pages[index], modifier = Modifier.fillMaxSize(),
+                    val pageOffset = ((pagerState.currentPage - index) + pagerState.currentPageOffsetFraction).coerceIn(-1f, 1f)
+                    val pageDistance = kotlin.math.abs(pageOffset)
+                    ReaderPageImage(
+                        pageUrl = pages[index],
+                        modifier = Modifier.fillMaxSize().graphicsLayer {
+                            alpha = 1f - (pageDistance * 0.12f)
+                            scaleX = 1f - (pageDistance * 0.035f)
+                            scaleY = 1f - (pageDistance * 0.035f)
+                            translationX = pageOffset * -12.dp.toPx()
+                            cameraDistance = 24f * density
+                        }.clip(RoundedCornerShape(5.dp)),
                         contentScale = if (fitToWidth) ContentScale.FillWidth else ContentScale.Fit,
-                        onTap = { if (!showChapterCinema && !showSettings && !showModeMenu) showReaderControls = !showReaderControls })
+                        onTap = { if (!showChapterCinema && !showSettings && !showModeMenu) showReaderControls = !showReaderControls }
+                    )
                 }
                 else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
                     flingBehavior = readerFlingBehavior,
