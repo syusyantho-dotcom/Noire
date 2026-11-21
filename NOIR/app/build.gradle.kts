@@ -11,8 +11,8 @@ android {
         applicationId = "com.noir.reader"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "1.6.0"
+        versionCode = 18
+        versionName = "1.6.1"
     }
     buildFeatures { compose = true }
     compileOptions {
