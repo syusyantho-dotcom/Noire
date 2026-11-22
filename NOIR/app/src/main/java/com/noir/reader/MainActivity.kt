@@ -1559,6 +1559,34 @@ private fun DiscoveryCoverTile(series: Series, compact: Boolean, alternateHeight
     }
 }
 
+/** Frosted-glass surface: translucent dark base, soft top light and a hairline edge. */
+private fun Modifier.noirGlass(shape: androidx.compose.ui.graphics.Shape, strength: Float = 1f): Modifier =
+    this.clip(shape)
+        .background(Color(0x66060508))
+        .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.16f * strength), Color.White.copy(alpha = 0.05f * strength))))
+        .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.30f), Color.White.copy(alpha = 0.07f))), shape)
+
+@Composable
+private fun HomeSectionHeader(eyebrow: String, title: String, action: String? = null, onAction: () -> Unit = {}) {
+    Row(verticalAlignment = Alignment.Bottom) {
+        Column(Modifier.weight(1f)) {
+            Text(eyebrow, color = Color(0xFFB8A9D0), fontSize = 9.sp, letterSpacing = 2.2.sp)
+            Spacer(Modifier.height(5.dp))
+            Text(title, color = White, fontSize = 24.sp, fontWeight = FontWeight.Bold, letterSpacing = (-.4).sp)
+        }
+        if (action != null) {
+            Row(
+                Modifier.clip(CircleShape).clickable(onClick = onAction).padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(action, color = Color(0xFFD6C5F2), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.width(3.dp))
+                Icon(Icons.Rounded.ArrowForward, null, tint = Color(0xFFD6C5F2), modifier = Modifier.size(14.dp))
+            }
+        }
+    }
+}
+
 @Composable
 private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?, recentlyRead: List<Series>, saved: List<Series>, progressBySeries: Map<String, Float>, readingHistory: Map<String, ReadingHistoryEntry>, onOpen: (Series) -> Unit, onResume: (Series) -> Unit, onTab: (String) -> Unit) {
     val featuredStories = catalogue.take(5)
@@ -1571,209 +1599,293 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
             }
         }
     }
+    val listState = rememberLazyListState()
+    val scrollPx by remember {
+        derivedStateOf { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else 100000f }
+    }
+    val glowLoop = rememberInfiniteTransition(label = "home-glow")
+    val glowTravel by glowLoop.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(7000, easing = LinearEasing)),
+        label = "home-glow-progress"
+    )
+    val greeting = remember {
+        when (java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) {
+            in 5..11 -> "Good morning"
+            in 12..16 -> "Good afternoon"
+            in 17..21 -> "Good evening"
+            else -> "Late night reading"
+        }
+    }
+    val backdropStory = featuredStories.getOrNull(heroPagerState.currentPage) ?: recentlyRead.firstOrNull()
+    val heroShape = RoundedCornerShape(32.dp)
+
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 15.dp, bottom = 30.dp),
-            verticalArrangement = Arrangement.spacedBy(25.dp)
-        ) {
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(19.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                            NoirLogoMark(34.dp)
-                            Spacer(Modifier.width(10.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text("NOIR", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.2.sp)
-                                Text("YOUR READING UNIVERSE", color = Muted, fontSize = 7.sp, letterSpacing = 1.35.sp)
-                            }
-                        }
-                        Box(
-                            Modifier.size(40.dp).clip(CircleShape)
-                                .background(Brush.linearGradient(listOf(Color(0xFF302A38), Color(0xFF17151B))))
-                                .border(1.dp, Color(0xFF49414F), CircleShape)
-                                .clickable { onTab("Profile") },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Rounded.Person, contentDescription = "Profile", tint = Color(0xFFE8E0EE), modifier = Modifier.size(19.dp))
-                        }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            // Immersive backdrop: the featured cover, softly blurred, drifting slower than the content.
+            androidx.compose.animation.Crossfade(targetState = backdropStory, animationSpec = tween(900), label = "home-backdrop") { story ->
+                Box(
+                    Modifier.fillMaxWidth().height(560.dp).graphicsLayer {
+                        alpha = (1f - scrollPx / 720f).coerceIn(0f, 1f)
+                        translationY = -scrollPx * 0.32f
                     }
-                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text("A QUIETER KIND OF ESCAPE", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 2.1.sp)
-                        Text("Find your\nnext world.", color = White, fontSize = 34.sp, lineHeight = 37.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.7).sp)
+                ) {
+                    if (story != null) {
+                        SeriesCover(
+                            story,
+                            Modifier.fillMaxSize().blur(38.dp).graphicsLayer { scaleX = 1.35f; scaleY = 1.35f; this.alpha = 0.6f }
+                        )
                     }
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp))
-                            .background(Color(0xFF151419))
-                            .border(1.dp, Color(0xFF302C35), RoundedCornerShape(17.dp))
-                            .clickable { onTab("Discover") }
-                            .padding(horizontal = 14.dp, vertical = 13.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Rounded.Search, contentDescription = null, tint = Color(0xFFB8A9C5), modifier = Modifier.size(17.dp))
-                        Spacer(Modifier.width(10.dp))
-                        Text("Search stories, worlds, characters", color = Color(0xFF85818B), fontSize = 10.sp, modifier = Modifier.weight(1f))
-                        Icon(Icons.Rounded.ArrowForward, contentDescription = null, tint = Color(0xFF77717E), modifier = Modifier.size(15.dp))
-                    }
+                    Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.verticalGradient(0f to Color(0x55070709), 0.5f to Color(0xC8070709), 1f to Black)
+                        )
+                    )
                 }
             }
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("SELECTED FOR YOU", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 1.8.sp)
-                        Spacer(Modifier.weight(1f))
-                        Text("${String.format("%02d", heroPagerState.currentPage + 1)} / ${String.format("%02d", featuredStories.size.coerceAtLeast(1))}", color = Color(0xFF77717E), fontSize = 8.sp, letterSpacing = 1.sp)
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 12.dp, bottom = 34.dp),
+                verticalArrangement = Arrangement.spacedBy(30.dp)
+            ) {
+                item {
+                    Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                NoirLogoMark(30.dp)
+                                Spacer(Modifier.width(10.dp))
+                                Text("NOIR", color = White, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.4.sp)
+                            }
+                            Box(
+                                Modifier.size(42.dp).noirGlass(CircleShape).clickable { onTab("Profile") },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Rounded.Person, contentDescription = "Profile", tint = Color(0xFFEDE6F4), modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(greeting.uppercase(), color = Color(0xFFC9B9E2), fontSize = 10.sp, letterSpacing = 2.6.sp)
+                            Text(
+                                "Find your\nnext world.", color = White, fontSize = 42.sp, lineHeight = 45.sp,
+                                fontWeight = FontWeight.Bold, letterSpacing = (-1.2).sp
+                            )
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().noirGlass(RoundedCornerShape(20.dp), 0.7f)
+                                .clickable { onTab("Discover") }
+                                .padding(horizontal = 16.dp, vertical = 15.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.Search, contentDescription = null, tint = Color(0xFFD0C4E2), modifier = Modifier.size(19.dp))
+                            Spacer(Modifier.width(11.dp))
+                            Text("Search stories, worlds, characters", color = Color(0xFFA8A3B0), fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        }
                     }
+                }
+                item {
                     HorizontalPager(
                         state = heroPagerState,
                         modifier = Modifier.fillMaxWidth(),
                         pageSpacing = 12.dp,
-                        contentPadding = PaddingValues(end = 22.dp)
+                        contentPadding = PaddingValues(horizontal = 20.dp)
                     ) { page ->
                         val story = featuredStories.getOrNull(page)
                         Box(
-                            Modifier.fillMaxWidth().height(326.dp)
+                            Modifier.fillMaxWidth().height(430.dp)
                                 .graphicsLayer {
                                     val offset = (heroPagerState.currentPage - page) + heroPagerState.currentPageOffsetFraction
                                     val distance = kotlin.math.abs(offset).coerceIn(0f, 1f)
-                                    alpha = 1f - distance * 0.18f
-                                    scaleX = 1f - distance * 0.035f
-                                    scaleY = 1f - distance * 0.035f
+                                    alpha = 1f - distance * 0.28f
+                                    val settle = 1f - distance * 0.05f
+                                    scaleX = settle
+                                    scaleY = settle
                                 }
-                                .clip(RoundedCornerShape(28.dp))
+                                .clip(heroShape)
                                 .background(Brush.linearGradient(listOf(Color(0xFF30283B), Color(0xFF111014))))
                                 .clickable { story?.let(onOpen) }
-                        ) {
-                            story?.let { SeriesCover(it, Modifier.fillMaxSize()) }
-                            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color(0xF5070709), Color(0xA8070709), Color(0x12070709)))))
-                            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x12070709), Color(0x08070709), Color(0xF5070709)))))
-                            Column(Modifier.align(Alignment.TopStart).padding(18.dp)) {
-                                Row(
-                                    Modifier.clip(RoundedCornerShape(30.dp))
-                                        .background(Color(0x773A3347))
-                                        .border(1.dp, Color(0x557F7397), RoundedCornerShape(30.dp))
-                                        .padding(horizontal = 10.dp, vertical = 7.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(Modifier.size(5.dp).clip(CircleShape).background(Color(0xFFD6C4F1)))
-                                    Spacer(Modifier.width(7.dp))
-                                    Text("NOIR / EDITOR'S PICK", color = Color(0xFFE5DDF0), fontSize = 8.sp, letterSpacing = 1.2.sp)
+                                .drawWithContent {
+                                    drawContent()
+                                    drawRoundRect(
+                                        color = Color.White.copy(alpha = 0.14f),
+                                        cornerRadius = CornerRadius(32.dp.toPx()),
+                                        style = Stroke(width = 1.dp.toPx())
+                                    )
+                                    if (page == heroPagerState.currentPage) {
+                                        drawTravelingOutlineGlow(
+                                            cornerRadius = 32.dp.toPx(), progress = glowTravel,
+                                            inset = 1.5.dp.toPx(), arcFraction = 0.14f, strokeWidth = 1.4.dp.toPx()
+                                        )
+                                    }
                                 }
-                            }
-                            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(20.dp)) {
-                                Text(
-                                    "FEATURED STORY  /  ${String.format("%02d", page + 1)}",
-                                    color = Color(0xFFD0C4E2), fontSize = 8.sp, letterSpacing = 2.sp
+                        ) {
+                            story?.let {
+                                SeriesCover(
+                                    it,
+                                    Modifier.fillMaxSize().graphicsLayer {
+                                        val offset = (heroPagerState.currentPage - page) + heroPagerState.currentPageOffsetFraction
+                                        scaleX = 1.18f
+                                        scaleY = 1.18f
+                                        translationX = offset * size.width * 0.16f
+                                    }
                                 )
-                                Spacer(Modifier.height(8.dp))
+                            }
+                            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x26070709), 0.45f to Color.Transparent, 1f to Color(0xCC070709))))
+                            Row(
+                                Modifier.align(Alignment.TopStart).padding(16.dp)
+                                    .noirGlass(RoundedCornerShape(30.dp), 0.8f)
+                                    .padding(horizontal = 11.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(Modifier.size(5.dp).clip(CircleShape).background(Color(0xFFD6C4F1)))
+                                Spacer(Modifier.width(7.dp))
+                                Text("EDITOR'S PICK", color = Color(0xFFEFE8F7), fontSize = 9.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Medium)
+                            }
+                            Column(
+                                Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(12.dp)
+                                    .noirGlass(RoundedCornerShape(24.dp))
+                                    .padding(horizontal = 17.dp, vertical = 16.dp)
+                            ) {
                                 Text(
                                     story?.title ?: "A universe beyond the page",
-                                    color = White, fontSize = 26.sp, lineHeight = 30.sp,
-                                    fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(Modifier.height(7.dp))
-                                Text(
-                                    story?.description?.takeIf { it.isNotBlank() }?.let {
-                                        if (it.length > 105) it.take(105).substringBeforeLast(" ") + "…" else it
-                                    } ?: "One story. A thousand places to disappear.",
-                                    color = Color(0xFFD0CDD4), fontSize = 10.sp, lineHeight = 15.sp,
+                                    color = White, fontSize = 23.sp, lineHeight = 27.sp,
+                                    fontWeight = FontWeight.Bold, letterSpacing = (-.4).sp,
                                     maxLines = 2, overflow = TextOverflow.Ellipsis
                                 )
-                                Spacer(Modifier.height(15.dp))
-                                Row(
-                                    Modifier.clip(RoundedCornerShape(30.dp))
-                                        .background(Color(0xFFE9E4EF))
-                                        .clickable { story?.let(onOpen) }
-                                        .padding(horizontal = 15.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("ENTER THE STORY", color = Color(0xFF17131D), fontSize = 8.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold)
-                                    Spacer(Modifier.width(8.dp))
-                                    Icon(Icons.Rounded.ArrowOutward, null, tint = Color(0xFF17131D), modifier = Modifier.size(13.dp))
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    story?.description?.takeIf { it.isNotBlank() }?.let {
+                                        if (it.length > 110) it.take(110).substringBeforeLast(" ") + "…" else it
+                                    } ?: "One story. A thousand places to disappear.",
+                                    color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp, lineHeight = 17.sp,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(Modifier.height(14.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        Modifier.clip(CircleShape).background(Color(0xFFF1EDF6))
+                                            .clickable { story?.let(onOpen) }
+                                            .padding(horizontal = 18.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Rounded.PlayArrow, null, tint = Color(0xFF17131D), modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Read now", color = Color(0xFF17131D), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    Spacer(Modifier.weight(1f))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        repeat(featuredStories.size.coerceAtLeast(1)) { index ->
+                                            val active = heroPagerState.currentPage == index
+                                            Box(
+                                                Modifier.width(if (active) 18.dp else 5.dp).height(5.dp)
+                                                    .animateContentSize(tween(260))
+                                                    .clip(CircleShape)
+                                                    .background(if (active) Color.White else Color.White.copy(alpha = 0.3f))
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
+                }
+                if (recentlyRead.isNotEmpty()) {
+                    item {
+                        val latest = recentlyRead.first()
+                        val history = readingHistory["${latest.sourceId}:${latest.id}"]
+                        Box(Modifier.padding(horizontal = 20.dp)) {
+                            HomeContinueCard(latest, history, progressBySeries["${latest.sourceId}:${latest.id}"] ?: 0f, onResume = { onResume(latest) }, onOpenDetail = { onOpen(latest) })
+                        }
+                    }
+                    if (recentlyRead.size > 1) item {
+                        Box(Modifier.padding(horizontal = 20.dp)) {
+                            HomeSeriesShelf("YOUR READING LIST", "MORE FROM YOUR JOURNEY", recentlyRead.drop(1).take(9), "CONTINUE", progressBySeries, onResume)
+                        }
+                    }
+                }
+                item {
+                    Box(Modifier.padding(horizontal = 20.dp)) {
+                        HomeSectionHeader("THE CURRENT", "Stories in motion", "See all") { onTab("Discover") }
+                    }
+                }
+                when {
+                    loading && catalogue.isEmpty() -> item { Box(Modifier.padding(horizontal = 20.dp)) { LoadingState("Preparing your reading room…") } }
+                    error != null && catalogue.isEmpty() -> item { Box(Modifier.padding(horizontal = 20.dp)) { ErrorState(error) } }
+                    catalogue.isEmpty() -> item { Box(Modifier.padding(horizontal = 20.dp)) { EmptyState("The shelves are quiet", "Open Discover to explore the catalogue.") } }
+                    else -> item {
+                        val shelfState = rememberLazyListState()
+                        LazyRow(
+                            state = shelfState,
+                            flingBehavior = androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior(shelfState),
+                            horizontalArrangement = Arrangement.spacedBy(15.dp),
+                            contentPadding = PaddingValues(horizontal = 20.dp)
+                        ) {
+                            items(catalogue.take(12), key = { "${it.sourceId}-${it.id}" }) { series ->
+                                Column(Modifier.width(150.dp).noirPressScale { onOpen(series) }) {
+                                    Box(
+                                        Modifier.fillMaxWidth().height(214.dp)
+                                            .clip(RoundedCornerShape(24.dp))
+                                            .background(Color(0xFF201D26))
+                                            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(24.dp))
+                                    ) {
+                                        SeriesCover(series, Modifier.fillMaxSize())
+                                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.6f to Color.Transparent, 1f to Color(0x99000000))))
+                                        SourceRegistry.byId(series.sourceId)?.let { source ->
+                                            Row(
+                                                Modifier.align(Alignment.BottomStart).padding(9.dp)
+                                                    .noirGlass(RoundedCornerShape(20.dp), 0.8f)
+                                                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                SourceIcon(source, Modifier.size(13.dp))
+                                                Spacer(Modifier.width(5.dp))
+                                                Text(series.sourceName, color = Color.White.copy(alpha = 0.9f), fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 90.dp))
+                                            }
+                                        }
+                                    }
+                                    Spacer(Modifier.height(10.dp))
+                                    Text(series.title, color = White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, lineHeight = 17.sp, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                }
+                if (saved.isNotEmpty()) item {
+                    Box(Modifier.padding(horizontal = 20.dp)) {
+                        HomeSeriesShelf("YOUR COLLECTION", "SAVED TO YOUR LIBRARY", saved.take(10), "VIEW TITLE", progressBySeries, onOpen)
+                    }
+                }
+                item {
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-                        horizontalArrangement = Arrangement.Center,
+                        Modifier.padding(horizontal = 20.dp).fillMaxWidth()
+                            .noirGlass(RoundedCornerShape(26.dp), 0.9f)
+                            .clickable { onTab("Discover") }
+                            .padding(21.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        repeat(featuredStories.size.coerceAtLeast(1)) { index ->
-                            Box(
-                                Modifier.padding(horizontal = 3.dp)
-                                    .width(if (heroPagerState.currentPage == index) 19.dp else 5.dp)
-                                    .height(5.dp).animateContentSize(tween(260))
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (heroPagerState.currentPage == index) Color(0xFFD8C5F0) else Color(0xFF48434E))
-                            )
+                        Column(Modifier.weight(1f)) {
+                            Text("BEYOND THE LAST PAGE", color = Color(0xFFD0C4E2), fontSize = 9.sp, letterSpacing = 2.sp)
+                            Spacer(Modifier.height(7.dp))
+                            Text("Find your next obsession.", color = White, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = (-.3).sp)
+                            Spacer(Modifier.height(4.dp))
+                            Text("Explore the NOIR catalogue", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
                         }
+                        Icon(Icons.Rounded.ArrowForward, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(22.dp))
                     }
                 }
+                item { Text("NOIR  •  MANGA  •  MANHWA  •  MORE", color = Color(0xFF625D69), fontSize = 8.sp, letterSpacing = 2.sp, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
             }
-            if (recentlyRead.isNotEmpty()) {
-                item {
-                    val latest = recentlyRead.first()
-                    val history = readingHistory["${latest.sourceId}:${latest.id}"]
-                    HomeContinueCard(latest, history, progressBySeries["${latest.sourceId}:${latest.id}"] ?: 0f, onResume = { onResume(latest) }, onOpenDetail = { onOpen(latest) })
-                }
-                if (recentlyRead.size > 1) item {
-                    HomeSeriesShelf("YOUR READING LIST", "MORE FROM YOUR JOURNEY", recentlyRead.drop(1).take(9), "CONTINUE", progressBySeries, onResume)
-                }
+
+            // Compact title bar that fades in once the large header has scrolled away.
+            Box(
+                Modifier.align(Alignment.TopCenter).fillMaxWidth().height(46.dp)
+                    .graphicsLayer { alpha = ((scrollPx - 150f) / 120f).coerceIn(0f, 1f) }
+                    .background(Color(0xEB070709)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("NOIR", color = White, fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.6.sp)
             }
-            item {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Column(Modifier.weight(1f)) {
-                        Text("THE CURRENT", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 2.2.sp)
-                        Spacer(Modifier.height(5.dp))
-                        Text("Stories in motion", color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                    Text("ALL TITLES  ↗", color = Silver, fontSize = 8.sp, letterSpacing = 1.2.sp, modifier = Modifier.clickable { onTab("Discover") }.padding(bottom = 3.dp))
-                }
-            }
-            when {
-                loading && catalogue.isEmpty() -> item { LoadingState("Preparing your reading room…") }
-                error != null && catalogue.isEmpty() -> item { ErrorState(error) }
-                catalogue.isEmpty() -> item { EmptyState("The shelves are quiet", "Open Discover to explore the catalogue.") }
-                else -> item {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(end = 4.dp)) {
-                        items(catalogue.take(12), key = { "${it.sourceId}-${it.id}" }) { series ->
-                            Column(Modifier.width(132.dp).noirPressScale { onOpen(series) }) {
-                                Box(Modifier.fillMaxWidth().height(178.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF201D26))) {
-                                    SeriesCover(series, Modifier.fillMaxSize())
-                                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x22000000)))))
-                                }
-                                Spacer(Modifier.height(9.dp))
-                                Text(series.title, color = White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, lineHeight = 14.sp, overflow = TextOverflow.Ellipsis)
-                                Spacer(Modifier.height(5.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    SourceRegistry.byId(series.sourceId)?.let { source ->
-                                        SourceIcon(source, Modifier.size(15.dp))
-                                        Spacer(Modifier.width(5.dp))
-                                    }
-                                    Text(series.sourceName, color = Muted, fontSize = 7.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if (saved.isNotEmpty()) item {
-                HomeSeriesShelf("YOUR COLLECTION", "SAVED TO YOUR LIBRARY", saved.take(10), "VIEW TITLE", progressBySeries, onOpen)
-            }
-            item {
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Brush.linearGradient(listOf(Color(0xFF262131), Color(0xFF111014)))).border(1.dp, Color(0xFF393342), RoundedCornerShape(22.dp)).clickable { onTab("Discover") }.padding(19.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("BEYOND THE LAST PAGE", color = Color(0xFFD0C4E2), fontSize = 8.sp, letterSpacing = 1.8.sp)
-                        Spacer(Modifier.height(6.dp))
-                        Text("Find your next obsession.", color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.height(4.dp))
-                        Text("Explore the NOIR catalogue", color = Muted, fontSize = 10.sp)
-                    }
-                    Icon(Icons.Rounded.ArrowForward, null, tint = Silver, modifier = Modifier.size(20.dp))
-                }
-            }
-            item { Text("NOIR  •  MANGA  •  MANHWA  •  MORE", color = Color(0xFF625D69), fontSize = 8.sp, letterSpacing = 2.sp, modifier = Modifier.fillMaxWidth().padding(top = 1.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
         }
         BottomNav("Home", onTab)
     }
