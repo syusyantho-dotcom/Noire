@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -191,7 +192,15 @@ class MainActivity : ComponentActivity() {
         window.statusBarColor = android.graphics.Color.rgb(7, 7, 8)
         window.navigationBarColor = android.graphics.Color.rgb(7, 7, 8)
         SourceRegistry.initialize(applicationContext)
-        coil.Coil.setImageLoader(coil.ImageLoader.Builder(applicationContext).okHttpClient(NoirNetwork.client).build())
+        coil.Coil.setImageLoader(
+            coil.ImageLoader.Builder(applicationContext)
+                .okHttpClient(NoirNetwork.client)
+                .memoryCache { coil.memory.MemoryCache.Builder(applicationContext).maxSizePercent(0.28).build() }
+                .diskCache { coil.disk.DiskCache.Builder().directory(applicationContext.cacheDir.resolve("noir_images")).maxSizePercent(0.04).build() }
+                .respectCacheHeaders(false)
+                .crossfade(160)
+                .build()
+        )
         val radarConstraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
@@ -1092,6 +1101,61 @@ private fun NoirApp() {
 }
 
 @Composable
+private fun NoirChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    excluded: Boolean = false,
+    trailing: (@Composable () -> Unit)? = null
+) {
+    val container by animateColorAsState(
+        when {
+            excluded -> Color(0xFF3A1E26)
+            selected -> Color(0xFF3B2F4A)
+            else -> Color(0x33FFFFFF)
+        }, tween(180), label = "chip-bg"
+    )
+    val edge by animateColorAsState(
+        when {
+            excluded -> Color(0xFF8E4457)
+            selected -> Color(0xFF8D74B5)
+            else -> Color(0x26FFFFFF)
+        }, tween(180), label = "chip-edge"
+    )
+    val textColor = when {
+        excluded -> Color(0xFFFFB9C6)
+        selected -> Color(0xFFF1E8FA)
+        else -> Color(0xFFC9C3D1)
+    }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    Row(
+        modifier.clip(CircleShape).background(container).border(1.dp, edge, CircleShape)
+            .pointerInput(onClick, onLongClick) {
+                detectTapGestures(
+                    onTap = { onClick() },
+                    onLongPress = onLongClick?.let { lp ->
+                        {
+                            runCatching { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
+                            lp()
+                        }
+                    }
+                )
+            }
+            .padding(horizontal = 13.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label, color = textColor, fontSize = 12.sp, maxLines = 1, fontWeight = FontWeight.Medium,
+            textDecoration = if (excluded) androidx.compose.ui.text.style.TextDecoration.LineThrough else androidx.compose.ui.text.style.TextDecoration.None
+        )
+        if (trailing != null) { Spacer(Modifier.width(6.dp)); trailing() }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
+@Composable
 private fun CatalogueScreen(
     tab: String, query: String, onQuery: (String) -> Unit, catalogue: List<Series>,
     loading: Boolean, error: String?, hasMore: Boolean, loadingMore: Boolean, onLoadMore: () -> Unit,
@@ -1148,21 +1212,26 @@ private fun CatalogueScreen(
         discoveryPrefs.edit().putString("saved_searches", stored.toString()).apply()
     }
     val availableSources = remember(catalogue) { catalogue.map { it.sourceName }.distinct().sorted() }
-    val availableGenres = remember(catalogue) { catalogue.flatMap { it.tags }.distinct().sorted().take(24) }
+    // Most common genres first, so the quick strip shows what is actually worth tapping.
+    val availableGenres = remember(catalogue) {
+        catalogue.flatMap { it.tags }.groupingBy { it }.eachCount().entries
+            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key.lowercase() })
+            .map { it.key }.take(48)
+    }
     val availableStatuses = remember(catalogue) { catalogue.mapNotNull { it.status }.distinct().sorted() }
     val availableLanguages = remember(catalogue) { catalogue.mapNotNull { it.originalLanguage }.distinct().sorted() }
     LaunchedEffect(availableSources) {
         if (sourceFilter != "ALL SOURCES" && sourceFilter !in availableSources) sourceFilter = "ALL SOURCES"
     }
-    val sourceFiltered = remember(catalogue, sourceFilter, selectedStatus, selectedLanguage, selectedGenres, excludedGenres, excludedWords) {
+    val wordList = remember(excludedWords) { excludedWords.split(",").map { it.trim() }.filter { it.isNotBlank() } }
+    val sourceFiltered = remember(catalogue, sourceFilter, selectedStatus, selectedLanguage, selectedGenres, excludedGenres, wordList) {
         catalogue.filter { item ->
             val sourceMatch = sourceFilter == "ALL SOURCES" || item.sourceName == sourceFilter
             val statusMatch = selectedStatus == "ANY STATUS" || item.status.equals(selectedStatus, ignoreCase = true)
             val languageMatch = selectedLanguage == "ANY LANGUAGE" || item.originalLanguage.equals(selectedLanguage, ignoreCase = true)
             val genreMatch = selectedGenres.isEmpty() || selectedGenres.all { selected -> item.tags.any { it.equals(selected, true) } }
             val excludedGenreMatch = excludedGenres.none { excluded -> item.tags.any { it.equals(excluded, true) } }
-            val words = excludedWords.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            val excludedWordMatch = words.none { item.title.contains(it, true) || item.description.contains(it, true) }
+            val excludedWordMatch = wordList.none { item.title.contains(it, true) || item.description.contains(it, true) }
             sourceMatch && statusMatch && languageMatch && genreMatch && excludedGenreMatch && excludedWordMatch
         }
     }
@@ -1175,87 +1244,156 @@ private fun CatalogueScreen(
         }
     }
     val featured = if (query.isBlank() && sortMode == "FOR YOU" && sourceFilter == "ALL SOURCES") sortedCatalogue.firstOrNull() else null
-    val remaining = if (featured != null) sortedCatalogue.drop(1) else sortedCatalogue
+    val remaining = remember(sortedCatalogue, featured) { if (featured != null) sortedCatalogue.drop(1) else sortedCatalogue }
     val columns = if (compactGrid) 3 else 2
+    val rows = remember(remaining, columns) { remaining.chunked(columns) }
+    val activeFilterCount = (if (sourceFilter != "ALL SOURCES") 1 else 0) + (if (selectedStatus != "ANY STATUS") 1 else 0) +
+        (if (selectedLanguage != "ANY LANGUAGE") 1 else 0) + selectedGenres.size + excludedGenres.size + (if (wordList.isNotEmpty()) 1 else 0)
+    val clearFilters = {
+        selectedGenres = emptySet(); excludedGenres = emptySet(); selectedStatus = "ANY STATUS"
+        selectedLanguage = "ANY LANGUAGE"; excludedWords = ""; sourceFilter = "ALL SOURCES"
+    }
+    // Tap: include. Tap again: exclude. Tap again: neutral.
+    val cycleGenre: (String) -> Unit = { genre ->
+        when {
+            genre in selectedGenres -> { selectedGenres = selectedGenres - genre; excludedGenres = excludedGenres + genre }
+            genre in excludedGenres -> excludedGenres = excludedGenres - genre
+            else -> selectedGenres = selectedGenres + genre
+        }
+    }
+
+    val listState = rememberLazyListState()
+    val scrollPx = remember { derivedStateOf { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else 100000f } }
+    val scrolling = remember { derivedStateOf { listState.isScrollInProgress } }
+    val glowTransition = rememberInfiniteTransition(label = "discover-glow")
+    val glowProgress = glowTransition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(3600, easing = LinearEasing)), label = "discover-glow-progress"
+    )
+    // Fetch the next page before the reader reaches the bottom, so scrolling never stops at a button.
+    val nearEnd by remember { derivedStateOf {
+        val info = listState.layoutInfo
+        (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 3
+    } }
+    LaunchedEffect(nearEnd, hasMore, loadingMore, rows.size) {
+        if (nearEnd && hasMore && !loadingMore && catalogue.isNotEmpty() && rows.isNotEmpty()) onLoadMore()
+    }
+    val backdropStory = featured ?: sortedCatalogue.firstOrNull()
 
     Column(Modifier.fillMaxSize().background(Black).statusBarsPadding()) {
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(start = 17.dp, end = 17.dp, top = 20.dp, bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(17.dp)
-        ) {
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("NOIR  /  YOUR READING UNIVERSE", color = Color(0xFFB8A9D0), fontSize = 8.sp, letterSpacing = 2.1.sp)
-                        Spacer(Modifier.height(5.dp))
-                        Text("Discover", color = White, fontSize = 35.sp, fontWeight = FontWeight.SemiBold)
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            androidx.compose.animation.Crossfade(targetState = backdropStory, animationSpec = tween(800), label = "discover-backdrop") { story ->
+                Box(
+                    Modifier.fillMaxWidth().height(420.dp).graphicsLayer {
+                        alpha = (1f - scrollPx.value / 520f).coerceIn(0f, 1f)
+                        translationY = -scrollPx.value * 0.3f
                     }
-                    Box(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0xFF211D28))
-                        .border(1.dp, Color(0xFF403747), RoundedCornerShape(30.dp)).padding(horizontal = 11.dp, vertical = 8.dp)) {
-                        Text(if (matureContentEnabled) "18+ ON" else "SAFE MODE", color = Color(0xFFD8CBE5), fontSize = 8.sp, letterSpacing = .8.sp)
+                ) {
+                    if (story != null) {
+                        SeriesCover(story, Modifier.fillMaxSize().blur(40.dp).graphicsLayer { scaleX = 1.4f; scaleY = 1.4f; alpha = 0.5f })
                     }
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x44070709), 0.55f to Color(0xD0070709), 1f to Black)))
                 }
             }
-            item {
-                OutlinedTextField(
-                    value = query, onValueChange = onQuery, modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Search stories, manga, manhwa…", color = Muted, fontSize = 12.sp) },
-                    leadingIcon = { Icon(Icons.Rounded.Search, null, tint = Silver) },
-                    trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { onQuery("") }) { Icon(Icons.Rounded.Close, null, tint = Muted) } },
-                    singleLine = true, shape = RoundedCornerShape(21.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFF8B7A9B), unfocusedBorderColor = Color(0xFF39333F),
-                        focusedContainerColor = Color(0xCC19171E), unfocusedContainerColor = Color(0xCC141318),
-                        focusedTextColor = White, unfocusedTextColor = White, cursorColor = Silver
-                    )
-                )
-            }
-            if (searchHistory.isNotEmpty()) {
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Text("RECENT SEARCHES", color = Muted, fontSize = 7.sp, letterSpacing = 1.1.sp)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            items(searchHistory.toList()) { term ->
-                                Box(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0xFF17151B))
-                                    .border(1.dp, Color(0xFF39323F), RoundedCornerShape(30.dp))
-                                    .clickable { onQuery(term) }.padding(horizontal = 11.dp, vertical = 8.dp)) {
-                                    Text(term, color = Color(0xFFC6C0CC), fontSize = 8.sp, maxLines = 1)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 30.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item(key = "header") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("DISCOVERY FILTERS", color = Muted, fontSize = 8.sp, letterSpacing = 1.2.sp)
-                            Text(
-                                "${selectedGenres.size} included · ${excludedGenres.size} excluded · ${if (selectedStatus == "ANY STATUS") "any status" else selectedStatus}",
-                                color = Color(0xFFBDAFCB), fontSize = 9.sp
-                            )
+                            Text("NOIR  /  YOUR READING UNIVERSE", color = Color(0xFFC9B9E2), fontSize = 9.sp, letterSpacing = 2.2.sp)
+                            Spacer(Modifier.height(4.dp))
+                            Text("Discover", color = White, fontSize = 42.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1.2).sp)
                         }
-                        Box(Modifier.clip(RoundedCornerShape(30.dp))
-                            .background(Color(0xFF342B3D)).border(1.dp, Color(0xFF665572), RoundedCornerShape(30.dp))
-                            .clickable { showAdvancedFilters = true }.padding(horizontal = 13.dp, vertical = 9.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.Tune, null, tint = Color(0xFFE9DFF2), modifier = Modifier.size(13.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("ADVANCED", color = Color(0xFFE9DFF2), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                        Box(Modifier.noirGlass(CircleShape, 0.8f).padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Text(if (matureContentEnabled) "18+ ON" else "SAFE MODE", color = Color(0xFFE0D5EC), fontSize = 9.sp, letterSpacing = .9.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+                item(key = "search") {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = query, onValueChange = onQuery, modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("Search stories, manga, manhwa…", color = Color(0xFFA8A3B0), fontSize = 14.sp) },
+                            leadingIcon = { Icon(Icons.Rounded.Search, null, tint = Color(0xFFD0C4E2)) },
+                            trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { onQuery("") }) { Icon(Icons.Rounded.Close, null, tint = Silver) } },
+                            singleLine = true, shape = RoundedCornerShape(22.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFF9A82C2), unfocusedBorderColor = Color(0x33FFFFFF),
+                                focusedContainerColor = Color(0xB3141218), unfocusedContainerColor = Color(0x80141218),
+                                focusedTextColor = White, unfocusedTextColor = White, cursorColor = Silver
+                            )
+                        )
+                        if (searchHistory.isNotEmpty() && query.isBlank()) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                item { Text("RECENT", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp, modifier = Modifier.padding(end = 2.dp, top = 9.dp)) }
+                                items(searchHistory.toList()) { term -> NoirChip(term, false, { onQuery(term) }) }
                             }
                         }
                     }
-                    if (savedPresets.isNotEmpty()) {
-                        Text("SAVED SEARCHES", color = Muted, fontSize = 7.sp, letterSpacing = 1.1.sp)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            items(savedPresets.toList()) { raw ->
-                                val preset = runCatching { JSONObject(raw) }.getOrNull()
-                                val label = preset?.optString("name")?.takeIf { it.isNotBlank() } ?: "Saved search"
-                                Box(Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0xFF17151B))
-                                    .border(1.dp, Color(0xFF39323F), RoundedCornerShape(30.dp))
-                                    .clickable {
+                }
+                // Sticky quick-filter strip: Filters button + genres, always one tap away.
+                stickyHeader(key = "quick-filters") {
+                    Row(
+                        Modifier.fillMaxWidth().background(Color(0xF0050507)).padding(vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            Modifier.clip(CircleShape)
+                                .background(if (activeFilterCount > 0) Color(0xFF3B2F4A) else Color(0x33FFFFFF))
+                                .border(1.dp, if (activeFilterCount > 0) Color(0xFF8D74B5) else Color(0x26FFFFFF), CircleShape)
+                                .clickable { showAdvancedFilters = true }.padding(horizontal = 13.dp, vertical = 8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.Tune, null, tint = Color(0xFFEDE3F7), modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (activeFilterCount > 0) "Filters · $activeFilterCount" else "Filters", color = Color(0xFFEDE3F7), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+                            items(availableGenres.take(24), key = { it }) { genre ->
+                                NoirChip(
+                                    label = genre,
+                                    selected = genre in selectedGenres,
+                                    excluded = genre in excludedGenres,
+                                    onClick = { cycleGenre(genre) },
+                                    onLongClick = {
+                                        if (genre in excludedGenres) excludedGenres = excludedGenres - genre
+                                        else { excludedGenres = excludedGenres + genre; selectedGenres = selectedGenres - genre }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+                if (activeFilterCount > 0) {
+                    item(key = "active-filters") {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            item {
+                                NoirChip("Clear all", false, { clearFilters() }, trailing = { Icon(Icons.Rounded.Close, null, tint = Color(0xFFC9C3D1), modifier = Modifier.size(13.dp)) })
+                            }
+                            if (sourceFilter != "ALL SOURCES") item { NoirChip(sourceFilter, true, { sourceFilter = "ALL SOURCES" }, trailing = { Icon(Icons.Rounded.Close, null, tint = Color(0xFFE0D5EC), modifier = Modifier.size(13.dp)) }) }
+                            if (selectedStatus != "ANY STATUS") item { NoirChip(selectedStatus.replaceFirstChar { it.uppercase() }, true, { selectedStatus = "ANY STATUS" }, trailing = { Icon(Icons.Rounded.Close, null, tint = Color(0xFFE0D5EC), modifier = Modifier.size(13.dp)) }) }
+                            if (selectedLanguage != "ANY LANGUAGE") item { NoirChip(selectedLanguage.uppercase(), true, { selectedLanguage = "ANY LANGUAGE" }, trailing = { Icon(Icons.Rounded.Close, null, tint = Color(0xFFE0D5EC), modifier = Modifier.size(13.dp)) }) }
+                            items(selectedGenres.toList(), key = { "in-$it" }) { g -> NoirChip("+ $g", true, { selectedGenres = selectedGenres - g }, trailing = { Icon(Icons.Rounded.Close, null, tint = Color(0xFFE0D5EC), modifier = Modifier.size(13.dp)) }) }
+                            items(excludedGenres.toList(), key = { "ex-$it" }) { g -> NoirChip(g, false, { excludedGenres = excludedGenres - g }, excluded = true, trailing = { Icon(Icons.Rounded.Close, null, tint = Color(0xFFFFB9C6), modifier = Modifier.size(13.dp)) }) }
+                            if (wordList.isNotEmpty()) item { NoirChip("No: ${wordList.joinToString(", ")}".take(28), true, { excludedWords = "" }, trailing = { Icon(Icons.Rounded.Close, null, tint = Color(0xFFE0D5EC), modifier = Modifier.size(13.dp)) }) }
+                        }
+                    }
+                }
+                if (savedPresets.isNotEmpty()) {
+                    item(key = "presets") {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("SAVED SEARCHES  ·  HOLD TO REMOVE", color = Muted, fontSize = 9.sp, letterSpacing = 1.3.sp)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(savedPresets.toList()) { raw ->
+                                    val preset = runCatching { JSONObject(raw) }.getOrNull()
+                                    val label = preset?.optString("name")?.takeIf { it.isNotBlank() } ?: "Saved search"
+                                    NoirChip(label, false, onClick = {
                                         if (preset != null) {
                                             onQuery(preset.optString("query"))
                                             sourceFilter = preset.optString("source", "ALL SOURCES")
@@ -1265,144 +1403,135 @@ private fun CatalogueScreen(
                                             selectedGenres = preset.optString("genres").split("|").filter { it.isNotBlank() }.toSet()
                                             excludedGenres = preset.optString("excluded").split("|").filter { it.isNotBlank() }.toSet()
                                         }
-                                    }.padding(horizontal = 11.dp, vertical = 8.dp)) {
-                                    Text(label, color = Color(0xFFE9DFF2), fontSize = 8.sp, maxLines = 1)
+                                    }, onLongClick = { savedPresets.remove(raw) })
                                 }
                             }
                         }
                     }
                 }
-            }
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Text("EXPLORE BY SOURCE", color = Muted, fontSize = 8.sp, letterSpacing = 1.2.sp)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        items(listOf("ALL SOURCES") + availableSources) { sourceName ->
-                            val active = sourceFilter == sourceName
-                            Box(Modifier.clip(RoundedCornerShape(30.dp))
-                                .background(if (active) Color(0xFF342B3D) else Color(0xFF151419))
-                                .border(1.dp, if (active) Color(0xFF665572) else Color(0xFF302C35), RoundedCornerShape(30.dp))
-                                .clickable { sourceFilter = sourceName }.padding(horizontal = 12.dp, vertical = 9.dp)) {
-                                Text(sourceName, color = if (active) Color(0xFFE9DFF2) else Muted, fontSize = 8.sp, maxLines = 1, fontWeight = FontWeight.SemiBold)
+                item(key = "sources") {
+                    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Text("EXPLORE BY SOURCE", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(listOf("ALL SOURCES") + availableSources, key = { it }) { sourceName ->
+                                NoirChip(sourceName, sourceFilter == sourceName, { sourceFilter = sourceName })
                             }
                         }
                     }
                 }
-            }
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(if (query.isBlank()) "MADE FOR YOUR NEXT OBSESSION" else "YOUR SEARCH",
-                            color = White, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.25.sp)
-                        Spacer(Modifier.height(3.dp))
-                        Text("A universe of stories, gathered in one place", color = Muted, fontSize = 9.sp)
+                item(key = "count") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(if (query.isBlank()) "Made for your next obsession" else "Your search", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = (-.3).sp)
+                            Spacer(Modifier.height(2.dp))
+                            Text("A universe of stories, gathered in one place", color = Muted, fontSize = 11.sp)
+                        }
+                        Text("${sortedCatalogue.size} TITLES", color = Color(0xFFCFC0E4), fontSize = 10.sp, letterSpacing = 1.1.sp, fontWeight = FontWeight.Medium)
                     }
-                    Text("${sortedCatalogue.size} TITLES", color = Color(0xFFBDAFCB), fontSize = 8.sp, letterSpacing = 1.sp)
                 }
-            }
-            if (loading && catalogue.isEmpty()) {
-                item { LoadingState("Curating your discovery feed…") }
-            } else if (error != null && catalogue.isEmpty()) {
-                item { ErrorState(error) }
-            } else if (catalogue.isEmpty()) {
-                item { EmptyState("No titles found", "Try another title or check your connection.") }
-            } else {
-                if (featured != null) {
-                    item {
-                        Box(Modifier.fillMaxWidth().height(224.dp).clip(RoundedCornerShape(25.dp))
-                            .background(Brush.linearGradient(listOf(Color(0xFF30263A), Color(0xFF111014))))
-                            .noirPressScale { onOpen(featured) }) {
-                            SeriesCover(featured, Modifier.fillMaxSize())
-                            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
-                                listOf(Color(0x08070709), Color(0x22070709), Color(0xF5070709)))))
-                            Row(Modifier.align(Alignment.TopStart).padding(14.dp).clip(RoundedCornerShape(30.dp))
-                                .background(Color(0xA51A1720)).border(1.dp, Color(0x667F7390), RoundedCornerShape(30.dp))
-                                .padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(5.dp).clip(CircleShape).background(Color(0xFFD9C8F0)))
-                                Spacer(Modifier.width(7.dp))
-                                Text("FEATURED DISCOVERY", color = Color(0xFFE7DDED), fontSize = 8.sp, letterSpacing = 1.sp)
-                            }
-                            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(17.dp)) {
-                                Text(featured.sourceName.uppercase(), color = Color(0xFFD0C4E2), fontSize = 8.sp, letterSpacing = 1.5.sp)
-                                Spacer(Modifier.height(5.dp))
-                                Text(featured.title, color = White, fontSize = 22.sp, lineHeight = 26.sp,
-                                    fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Spacer(Modifier.height(8.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("ENTER THE STORY", color = Color(0xFFF0EAF5), fontSize = 8.sp,
-                                        letterSpacing = 1.1.sp, fontWeight = FontWeight.Bold)
-                                    Spacer(Modifier.width(6.dp))
-                                    Icon(Icons.Rounded.ArrowOutward, null, tint = Color(0xFFF0EAF5), modifier = Modifier.size(13.dp))
+                if (loading && catalogue.isEmpty()) {
+                    item(key = "loading") { LoadingState("Curating your discovery feed…") }
+                } else if (error != null && catalogue.isEmpty()) {
+                    item(key = "error") { ErrorState(error) }
+                } else if (catalogue.isEmpty()) {
+                    item(key = "empty") { EmptyState("No titles found", "Try another title or check your connection.") }
+                } else {
+                    if (featured != null) {
+                        item(key = "featured") {
+                            val featuredShape = RoundedCornerShape(30.dp)
+                            Box(
+                                Modifier.fillMaxWidth().height(300.dp).clip(featuredShape)
+                                    .background(Brush.linearGradient(listOf(Color(0xFF30263A), Color(0xFF111014))))
+                                    .noirPressScale { onOpen(featured) }
+                                    .drawWithContent {
+                                        drawContent()
+                                        drawRoundRect(Color.White.copy(alpha = 0.14f), cornerRadius = CornerRadius(30.dp.toPx()), style = Stroke(1.dp.toPx()))
+                                        if (!scrolling.value) {
+                                            drawTravelingOutlineGlow(30.dp.toPx(), glowProgress.value, 1.5.dp.toPx(), 0.14f, 1.4.dp.toPx())
+                                        }
+                                    }
+                            ) {
+                                SeriesCover(featured, Modifier.fillMaxSize())
+                                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x1A070709), 0.5f to Color.Transparent, 1f to Color(0xCC070709))))
+                                Row(
+                                    Modifier.align(Alignment.TopStart).padding(14.dp).noirGlass(CircleShape, 0.8f).padding(horizontal = 11.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(Modifier.size(5.dp).clip(CircleShape).background(Color(0xFFD9C8F0)))
+                                    Spacer(Modifier.width(7.dp))
+                                    Text("FEATURED DISCOVERY", color = Color(0xFFEFE8F7), fontSize = 9.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Medium)
+                                }
+                                Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(12.dp).noirGlass(RoundedCornerShape(22.dp)).padding(horizontal = 16.dp, vertical = 14.dp)) {
+                                    Text(featured.sourceName.uppercase(), color = Color(0xFFD6CAE8), fontSize = 9.sp, letterSpacing = 1.6.sp)
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(featured.title, color = White, fontSize = 22.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-.3).sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Spacer(Modifier.height(8.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("Enter the story", color = Color(0xFFF0EAF5), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        Spacer(Modifier.width(5.dp))
+                                        Icon(Icons.Rounded.ArrowOutward, null, tint = Color(0xFFF0EAF5), modifier = Modifier.size(14.dp))
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text("THE COLLECTION", color = White, fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp)
-                                Text(if (compactGrid) "Every story, at a glance" else "Curated finds, waiting to be opened",
-                                    color = Muted, fontSize = 9.sp)
-                            }
-                            Row(Modifier.clip(RoundedCornerShape(13.dp)).background(Color(0xFF17151B))
-                                .border(1.dp, Color(0xFF39323F), RoundedCornerShape(13.dp)).padding(3.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(width = 38.dp, height = 34.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(if (!compactGrid) Color(0xFF393044) else Color.Transparent)
-                                    .clickable { onCompactGridChange(false) }, contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Rounded.GridView, null,
-                                        tint = if (!compactGrid) Color(0xFFE8DDF2) else Muted, modifier = Modifier.size(18.dp))
+                    item(key = "collection-header") {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("The collection", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = (-.3).sp)
+                                    Text(if (compactGrid) "Every story, at a glance" else "Curated finds, waiting to be opened", color = Muted, fontSize = 11.sp)
                                 }
-                                Box(Modifier.size(width = 38.dp, height = 34.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(if (compactGrid) Color(0xFF393044) else Color.Transparent)
-                                    .clickable { onCompactGridChange(true) }, contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Rounded.ViewModule, null,
-                                        tint = if (compactGrid) Color(0xFFE8DDF2) else Muted, modifier = Modifier.size(18.dp))
+                                Row(Modifier.noirGlass(RoundedCornerShape(15.dp), 0.7f).padding(3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(width = 40.dp, height = 34.dp).clip(RoundedCornerShape(12.dp))
+                                        .background(if (!compactGrid) Color(0xFF433752) else Color.Transparent)
+                                        .clickable { onCompactGridChange(false) }, contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Rounded.GridView, null, tint = if (!compactGrid) Color(0xFFEDE3F7) else Muted, modifier = Modifier.size(18.dp))
+                                    }
+                                    Box(Modifier.size(width = 40.dp, height = 34.dp).clip(RoundedCornerShape(12.dp))
+                                        .background(if (compactGrid) Color(0xFF433752) else Color.Transparent)
+                                        .clickable { onCompactGridChange(true) }, contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Rounded.ViewModule, null, tint = if (compactGrid) Color(0xFFEDE3F7) else Muted, modifier = Modifier.size(18.dp))
+                                    }
                                 }
                             }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("FOR YOU", "A–Z", "SOURCE", "NEWEST").forEach { mode ->
-                                val selected = sortMode == mode
-                                Box(Modifier.clip(RoundedCornerShape(30.dp))
-                                    .background(if (selected) Color(0xFF342B3D) else Color(0xFF151419))
-                                    .border(1.dp, if (selected) Color(0xFF665572) else Color(0xFF302C35), RoundedCornerShape(30.dp))
-                                    .clickable { sortMode = mode }.padding(horizontal = 13.dp, vertical = 8.dp)) {
-                                    Text(mode, color = if (selected) Color(0xFFE9DFF2) else Muted,
-                                        fontSize = 8.sp, letterSpacing = .8.sp, fontWeight = FontWeight.SemiBold)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(listOf("FOR YOU", "A–Z", "SOURCE", "NEWEST")) { mode ->
+                                    NoirChip(mode, sortMode == mode, { sortMode = mode })
                                 }
                             }
                         }
                     }
-                }
-                items(remaining.chunked(columns), key = { row -> row.joinToString("|") { "${it.sourceId}:${it.id}" } }) { row ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(if (compactGrid) 8.dp else 11.dp),
-                        verticalAlignment = Alignment.Top) {
-                        row.forEachIndexed { index, series ->
-                            Box(Modifier.weight(1f)) {
-                                DiscoveryCoverTile(series, compactGrid, !compactGrid && ((index + remaining.indexOf(series)) % 3 == 1)) {
-                                    onOpen(series)
-                                }
+                    if (rows.isEmpty()) {
+                        item(key = "no-match") {
+                            Column(Modifier.fillMaxWidth().noirGlass(RoundedCornerShape(24.dp), 0.7f).padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Nothing matches these filters", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(6.dp))
+                                Text("Loosen a genre or clear everything to see the full catalogue.", color = Muted, fontSize = 12.sp)
+                                Spacer(Modifier.height(14.dp))
+                                NoirChip("Clear all filters", true, { clearFilters() })
                             }
                         }
-                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                    itemsIndexed(rows, key = { _, row -> row.joinToString("|") { "${it.sourceId}:${it.id}" } }) { rowIndex, row ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(if (compactGrid) 8.dp else 12.dp), verticalAlignment = Alignment.Top) {
+                            row.forEachIndexed { index, series ->
+                                Box(Modifier.weight(1f)) {
+                                    DiscoveryCoverTile(series, compactGrid, !compactGrid && ((index + rowIndex * columns) % 3 == 1), glowProgress, scrolling) { onOpen(series) }
+                                }
+                            }
+                            repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
                     }
                 }
-            }
-            if (hasMore || loadingMore) {
-                item {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                        Text(if (loadingMore) "LOADING MORE…" else "LOAD MORE STORIES  ↓",
-                            color = Color(0xFFE3D9EA), fontSize = 9.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.Bold,
-                            modifier = Modifier.clip(RoundedCornerShape(30.dp))
-                                .background(Brush.linearGradient(listOf(Color(0xFF342A3D), Color(0xFF1C1921))))
-                                .border(1.dp, Color(0xFF55465F), RoundedCornerShape(30.dp))
-                                .clickable(enabled = !loadingMore, onClick = onLoadMore).padding(horizontal = 20.dp, vertical = 13.dp))
+                if (hasMore || loadingMore) {
+                    item(key = "more") {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                            Text(if (loadingMore) "LOADING MORE…" else "LOAD MORE STORIES  ↓",
+                                color = Color(0xFFE9DFF2), fontSize = 10.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.noirGlass(CircleShape, 0.8f)
+                                    .clickable(enabled = !loadingMore, onClick = onLoadMore).padding(horizontal = 22.dp, vertical = 14.dp))
+                        }
                     }
                 }
             }
@@ -1412,86 +1541,72 @@ private fun CatalogueScreen(
     if (showAdvancedFilters) {
         AlertDialog(
             onDismissRequest = { showAdvancedFilters = false },
-            containerColor = Color(0xFF151419),
-            title = { Text("Advanced discovery", color = White, fontWeight = FontWeight.SemiBold) },
+            containerColor = Color(0xFF121016),
+            shape = RoundedCornerShape(30.dp),
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            modifier = Modifier.padding(horizontal = 14.dp),
+            title = { Text("Filters", color = White, fontWeight = FontWeight.Bold, fontSize = 24.sp) },
             text = {
-                Column(Modifier.heightIn(max = 470.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(13.dp)) {
-                    Text("SOURCE", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.2.sp)
-                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        (listOf("ALL SOURCES") + availableSources).forEach { option ->
-                            Row(Modifier.fillMaxWidth().clickable { sourceFilter = option }, verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = sourceFilter == option, onClick = { sourceFilter = option })
-                                Text(option, color = White, fontSize = 10.sp)
+                Column(Modifier.heightIn(max = 500.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("SOURCE", color = Color(0xFFD6C5F2), fontSize = 10.sp, letterSpacing = 1.4.sp)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        (listOf("ALL SOURCES") + availableSources).forEach { option -> NoirChip(option, sourceFilter == option, { sourceFilter = option }) }
+                    }
+                    if (availableStatuses.isNotEmpty()) {
+                        Text("PUBLICATION STATUS", color = Color(0xFFD6C5F2), fontSize = 10.sp, letterSpacing = 1.4.sp)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            (listOf("ANY STATUS") + availableStatuses).forEach { option ->
+                                NoirChip(option.replaceFirstChar { it.uppercase() }, selectedStatus == option, { selectedStatus = option })
                             }
                         }
                     }
-                    Text("PUBLICATION STATUS", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.2.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        (listOf("ANY STATUS") + availableStatuses).take(4).forEach { option ->
-                            FilterChip(selected = selectedStatus == option, onClick = { selectedStatus = option }, label = { Text(option.replaceFirstChar { it.uppercase() }, fontSize = 8.sp) })
-                        }
-                    }
-                    Text("ORIGINAL LANGUAGE", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.2.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        (listOf("ANY LANGUAGE") + availableLanguages).take(5).forEach { option ->
-                            FilterChip(selected = selectedLanguage == option, onClick = { selectedLanguage = option }, label = { Text(option.uppercase(), fontSize = 8.sp) })
-                        }
-                    }
-                    Text("INCLUDE ALL SELECTED GENRES", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.2.sp)
-                    availableGenres.chunked(2).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            row.forEach { genre ->
-                                FilterChip(selected = genre in selectedGenres, onClick = {
-                                    selectedGenres = if (genre in selectedGenres) selectedGenres - genre else selectedGenres + genre
-                                }, label = { Text(genre, fontSize = 8.sp) })
+                    if (availableLanguages.isNotEmpty()) {
+                        Text("ORIGINAL LANGUAGE", color = Color(0xFFD6C5F2), fontSize = 10.sp, letterSpacing = 1.4.sp)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            (listOf("ANY LANGUAGE") + availableLanguages).forEach { option ->
+                                NoirChip(option.uppercase(), selectedLanguage == option, { selectedLanguage = option })
                             }
                         }
                     }
-                    Text("EXCLUDE GENRES", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.2.sp)
-                    availableGenres.chunked(2).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            row.forEach { genre ->
-                                FilterChip(selected = genre in excludedGenres, onClick = {
-                                    excludedGenres = if (genre in excludedGenres) excludedGenres - genre else excludedGenres + genre
-                                    if (genre in selectedGenres) selectedGenres = selectedGenres - genre
-                                }, label = { Text(genre, fontSize = 8.sp) })
-                            }
+                    Text("GENRES  ·  TAP TO INCLUDE, TAP AGAIN TO EXCLUDE", color = Color(0xFFD6C5F2), fontSize = 10.sp, letterSpacing = 1.4.sp)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        availableGenres.forEach { genre ->
+                            NoirChip(
+                                label = if (genre in selectedGenres) "+ $genre" else genre,
+                                selected = genre in selectedGenres, excluded = genre in excludedGenres,
+                                onClick = { cycleGenre(genre) }
+                            )
                         }
                     }
-                    Text("EXCLUDE WORDS (COMMA SEPARATED)", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = 1.2.sp)
+                    Text("EXCLUDE WORDS (COMMA SEPARATED)", color = Color(0xFFD6C5F2), fontSize = 10.sp, letterSpacing = 1.4.sp)
                     OutlinedTextField(value = excludedWords, onValueChange = { excludedWords = it }, modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("e.g. harem, horror", color = Muted) }, singleLine = true)
-                    Text("Genre, status and language filters use metadata supplied by each source. Sources without metadata may not match these filters.", color = Muted, fontSize = 9.sp, lineHeight = 14.sp)
+                        placeholder = { Text("e.g. harem, horror", color = Muted) }, singleLine = true, shape = RoundedCornerShape(16.dp))
+                    Text("Genre, status and language filters use metadata supplied by each source. Sources without metadata may not match these filters.", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    val presetName = query.takeIf { it.isNotBlank() } ?: selectedGenres.firstOrNull() ?: "Custom filters"
-                    val preset = JSONObject()
-                        .put("name", presetName.take(24))
-                        .put("query", query)
-                        .put("source", sourceFilter)
-                        .put("status", selectedStatus)
-                        .put("language", selectedLanguage)
-                        .put("genres", selectedGenres.joinToString("|"))
-                        .put("excluded", excludedGenres.joinToString("|"))
-                        .put("exclude", excludedWords)
-                    val raw = preset.toString()
-                    if (raw !in savedPresets) savedPresets.add(raw)
-                    showAdvancedFilters = false
-                }) { Text("SAVE PRESET", color = Color(0xFFD6C5F2)) }
+                Box(
+                    Modifier.clip(CircleShape).background(Color(0xFFF1EDF6)).clickable { showAdvancedFilters = false }
+                        .padding(horizontal = 20.dp, vertical = 11.dp)
+                ) { Text("Show ${sortedCatalogue.size} titles", color = Color(0xFF17131D), fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
             },
             dismissButton = {
                 Row {
+                    TextButton(onClick = { clearFilters() }) { Text("RESET", color = Muted) }
                     TextButton(onClick = {
-                        selectedGenres = emptySet()
-                        excludedGenres = emptySet()
-                        selectedStatus = "ANY STATUS"
-                        selectedLanguage = "ANY LANGUAGE"
-                        excludedWords = ""
-                        sourceFilter = "ALL SOURCES"
-                    }) { Text("RESET", color = Muted) }
-                    TextButton(onClick = { showAdvancedFilters = false }) { Text("DONE", color = White) }
+                        val presetName = query.takeIf { it.isNotBlank() } ?: selectedGenres.firstOrNull() ?: "Custom filters"
+                        val preset = JSONObject()
+                            .put("name", presetName.take(24))
+                            .put("query", query)
+                            .put("source", sourceFilter)
+                            .put("status", selectedStatus)
+                            .put("language", selectedLanguage)
+                            .put("genres", selectedGenres.joinToString("|"))
+                            .put("excluded", excludedGenres.joinToString("|"))
+                            .put("exclude", excludedWords)
+                        val raw = preset.toString()
+                        if (raw !in savedPresets) savedPresets.add(raw)
+                    }) { Text("SAVE PRESET", color = Color(0xFFD6C5F2)) }
                 }
             }
         )
@@ -1499,64 +1614,58 @@ private fun CatalogueScreen(
 }
 
 @Composable
-private fun DiscoveryCoverTile(series: Series, compact: Boolean, alternateHeight: Boolean, onClick: () -> Unit) {
+private fun DiscoveryCoverTile(
+    series: Series, compact: Boolean, alternateHeight: Boolean,
+    glowProgress: State<Float>, glowPaused: State<Boolean>, onClick: () -> Unit
+) {
     val imageRatio = when {
         compact -> 0.72f
         alternateHeight -> 0.78f
         else -> 0.62f
     }
-    val glowTransition = rememberInfiniteTransition(label = "cover-outline-glow")
-    val glowProgress by glowTransition.animateFloat(
-        initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(animation = tween(3000, easing = LinearEasing)),
-        label = "outline-travel-progress"
-    )
-    val coverShape = RoundedCornerShape(if (compact) 13.dp else 17.dp)
-    Column(Modifier.fillMaxWidth().animateContentSize(tween(260))
-        .clip(RoundedCornerShape(if (compact) 14.dp else 19.dp))
-        .background(Color(0xFF121116)).noirPressScale(onClick).padding(bottom = if (compact) 8.dp else 11.dp)) {
+    val coverShape = RoundedCornerShape(if (compact) 14.dp else 20.dp)
+    Column(Modifier.fillMaxWidth().noirPressScale(onClick)) {
         Box(Modifier.fillMaxWidth().aspectRatio(imageRatio).clip(coverShape)
             .background(Color(0xFF1C1A21))
             .drawWithContent {
                 drawContent()
-                if (!compact) {
-                    drawRoundRect(
-                        color = Color(0x667B5AA8),
-                        topLeft = Offset(1.dp.toPx(), 1.dp.toPx()),
-                        size = androidx.compose.ui.geometry.Size(size.width - 2.dp.toPx(), size.height - 2.dp.toPx()),
-                        cornerRadius = CornerRadius(17.dp.toPx()),
-                        style = Stroke(width = 1.1.dp.toPx())
-                    )
+                drawRoundRect(
+                    color = Color.White.copy(alpha = 0.10f),
+                    cornerRadius = CornerRadius((if (compact) 14.dp else 20.dp).toPx()),
+                    style = Stroke(width = 1.dp.toPx())
+                )
+                // The traveling glow is paused while the list moves; reading state here keeps it out of composition.
+                if (!compact && !glowPaused.value) {
                     drawTravelingOutlineGlow(
-                        cornerRadius = 17.dp.toPx(),
-                        progress = glowProgress,
+                        cornerRadius = 20.dp.toPx(),
+                        progress = glowProgress.value,
                         inset = 1.5.dp.toPx(),
                         arcFraction = 0.18f
                     )
                 }
             }) {
             SeriesCover(series, Modifier.fillMaxSize())
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x24000000)))))
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Color(0x66000000))))
             if (!compact) {
                 SourceRegistry.byId(series.sourceId)?.let { source ->
-                    Box(Modifier.align(Alignment.TopEnd).padding(7.dp).clip(CircleShape)
-                        .background(Color(0xD51A1720)).border(1.dp, Color(0x887F7390), CircleShape).padding(7.dp)) {
-                        SourceIcon(source, Modifier.size(25.dp))
+                    Box(Modifier.align(Alignment.TopEnd).padding(8.dp).noirGlass(CircleShape, 0.8f).padding(6.dp)) {
+                        SourceIcon(source, Modifier.size(22.dp))
                     }
                 }
             }
         }
-        Spacer(Modifier.height(if (compact) 7.dp else 10.dp))
-        Text(series.title, color = White, fontSize = if (compact) 10.sp else 12.sp,
+        Spacer(Modifier.height(if (compact) 7.dp else 9.dp))
+        Text(series.title, color = White, fontSize = if (compact) 11.sp else 13.sp,
             fontWeight = FontWeight.SemiBold, maxLines = 2,
-            lineHeight = if (compact) 12.sp else 15.sp, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = if (compact) 7.dp else 10.dp))
+            lineHeight = if (compact) 13.sp else 16.sp, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 3.dp))
         if (!compact) {
-            Spacer(Modifier.height(7.dp))
-            Text(series.sourceName, color = Color(0xFFB8B0C2), fontSize = 8.sp,
-                letterSpacing = .35.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 10.dp))
+            Spacer(Modifier.height(3.dp))
+            Text(series.sourceName, color = Color(0xFFB8B0C2), fontSize = 10.sp,
+                letterSpacing = .3.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 3.dp))
         }
+        Spacer(Modifier.height(4.dp))
     }
 }
 
