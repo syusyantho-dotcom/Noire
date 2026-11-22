@@ -120,6 +120,23 @@ private val White = Color(0xFFF4F4F5)
 private val Muted = Color(0xFF99999F)
 private val Silver = Color(0xFFC6C6CC)
 
+/** Index of the chapter that follows [currentId] in reading order, whichever way the source orders its list. */
+private fun nextChapterIndex(list: List<Chapter>, currentId: String): Int? {
+    val i = list.indexOfFirst { it.id == currentId }
+    if (i < 0 || list.size < 2) return null
+    val first = list.first().number.toFloatOrNull()
+    val last = list.last().number.toFloatOrNull()
+    val descending = if (first != null && last != null && first != last) first > last
+        else list.last().sourceUploadDate > 0L && list.first().sourceUploadDate > list.last().sourceUploadDate
+    return (if (descending) i - 1 else i + 1).takeIf { it in list.indices }
+}
+
+@Composable
+private fun rememberAppVersion(): String {
+    val context = LocalContext.current
+    return remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty() }
+}
+
 private object SourceIconCache {
     private val icons = java.util.concurrent.ConcurrentHashMap<String, String>()
     fun get(sourceId: String): String? = icons[sourceId]
@@ -173,6 +190,7 @@ class MainActivity : ComponentActivity() {
         window.statusBarColor = android.graphics.Color.rgb(7, 7, 8)
         window.navigationBarColor = android.graphics.Color.rgb(7, 7, 8)
         SourceRegistry.initialize(applicationContext)
+        coil.Coil.setImageLoader(coil.ImageLoader.Builder(applicationContext).okHttpClient(NoirNetwork.client).build())
         val radarConstraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
@@ -296,7 +314,9 @@ private fun NoirApp() {
         }
     }
     val activeSourceIds = enabledSourceIds.toList()
-    val activeSources = SourceRegistry.sources.filter { it.id in activeSourceIds }
+    val activeSources = SourceRegistry.sources.filter {
+        it.id in activeSourceIds && (!it.isAdultOnly || prefs.getBoolean("mature_content_18_plus", false))
+    }
     LaunchedEffect(activeSourceIds) {
         val stored = JSONArray()
         activeSourceIds.forEach { stored.put(it) }
@@ -766,8 +786,21 @@ private fun NoirApp() {
         chapters = emptyList()
         loading = true
         error = null
-        try { chapters = SourceRegistry.byId(item.sourceId)?.chapters(item).orEmpty() }
-        catch (e: Exception) { error = e.message ?: "Could not load chapters." }
+        try {
+            val loaded = SourceRegistry.byId(item.sourceId)?.chapters(item).orEmpty()
+            chapters = loaded
+            if (loaded.isNotEmpty() && downloadedChapterKeys.any { it.startsWith("${item.sourceId}:${item.id}:") }) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    OfflineChapterStore.saveChapterList(context.applicationContext, item, loaded)
+                }
+            }
+        }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (e: Exception) {
+            // Offline: fall back to the saved chapter list so downloaded chapters still open.
+            val cached = OfflineChapterStore.cachedChapterList(context.applicationContext, item)
+            if (cached.isNotEmpty()) chapters = cached else error = e.message ?: "Could not load chapters."
+        }
         finally { loading = false }
     }
     val refreshChapters: () -> Unit = {
@@ -814,8 +847,7 @@ private fun NoirApp() {
     LaunchedEffect(selected?.id, selected?.sourceId, selectedChapter?.id, chapters) {
         val item = selected ?: return@LaunchedEffect
         val current = selectedChapter ?: return@LaunchedEffect
-        val currentIndex = chapters.indexOfFirst { it.id == current.id }
-        val next = chapters.getOrNull(currentIndex + 1) ?: return@LaunchedEffect
+        val next = nextChapterIndex(chapters, current.id)?.let { chapters[it] } ?: return@LaunchedEffect
         val key = OfflineChapterStore.key(item, next)
         if (key in preloadedChapterPages) return@LaunchedEffect
         if (OfflineChapterStore.localPages(context, item, next) != null) return@LaunchedEffect
@@ -826,8 +858,7 @@ private fun NoirApp() {
             ?.let { preloadedChapterPages[key] = it }
     }
     val nextChapterForReader = selectedChapter?.let { current ->
-        val index = chapters.indexOfFirst { it.id == current.id }
-        chapters.getOrNull(index + 1)
+        nextChapterIndex(chapters, current.id)?.let { chapters[it] }
     }
     val isNextChapterPreloaded = selected?.let { item ->
         nextChapterForReader?.let { preloadedChapterPages.containsKey(OfflineChapterStore.key(item, it)) }
@@ -884,8 +915,7 @@ private fun NoirApp() {
                         }
                     },
                     onNextChapter = {
-                        val chapterIndex = chapters.indexOfFirst { it.id == selectedChapter!!.id }
-                        chapters.getOrNull(chapterIndex + 1)?.let { selectedChapter = it }
+                        nextChapterIndex(chapters, selectedChapter!!.id)?.let { selectedChapter = chapters[it] }
                     },
                     onBack = { goBack() }
                 )
@@ -928,6 +958,9 @@ private fun NoirApp() {
                                         downloadProgress = ((done * 100f) / total).toInt()
                                     }
                                     if (key !in downloadedChapterKeys) downloadedChapterKeys.add(key)
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        OfflineChapterStore.saveChapterList(context.applicationContext, item, chapters)
+                                    }
                                 } catch (e: Exception) {
                                     error = "Download failed: ${e.message ?: "Check your connection."}"
                                 } finally {
@@ -935,6 +968,13 @@ private fun NoirApp() {
                                     downloadProgress = 0
                                 }
                             }
+                        }
+                    },
+                    onDeleteDownload = { chapter ->
+                        val item = selected!!
+                        scope.launch {
+                            OfflineChapterStore.delete(context.applicationContext, item, chapter)
+                            downloadedChapterKeys.remove(OfflineChapterStore.key(item, chapter))
                         }
                     }
                 )
@@ -2235,7 +2275,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
                 Text("NOIR READER", color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text("Your personal reading space", color = Muted, fontSize = 10.sp)
             }
-            Text("1.6.1", color = Silver, fontSize = 9.sp)
+            Text(rememberAppVersion(), color = Silver, fontSize = 9.sp)
         }
         Spacer(Modifier.height(18.dp))
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(21.dp))
@@ -2307,7 +2347,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Panel).clickable(onClick = onWhatsNew).padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.AutoAwesome, null, tint = Color(0xFFD6C5F2))
             Text("What’s New in NOIR", color = White, fontSize = 13.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
-            Text("1.6.1", color = Color(0xFFD6C5F2), fontSize = 9.sp)
+            Text(rememberAppVersion(), color = Color(0xFFD6C5F2), fontSize = 9.sp)
             Icon(Icons.Rounded.ChevronRight, null, tint = Muted)
         }
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Panel).clickable(onClick = onAbout).padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2444,8 +2484,20 @@ private fun DetailScreen(
     readingHistoryEntry: ReadingHistoryEntry?, loading: Boolean, error: String?,
     onRefreshChapters: () -> Unit,
     onBack: () -> Unit, onSave: () -> Unit, onToggleChapterBookmark: (Chapter) -> Unit,
-    onChapter: (Chapter) -> Unit, onDownloadChapter: (Chapter) -> Unit
+    onChapter: (Chapter) -> Unit, onDownloadChapter: (Chapter) -> Unit,
+    onDeleteDownload: (Chapter) -> Unit
 ) {
+    var pendingDelete by remember(series.id) { mutableStateOf<Chapter?>(null) }
+    pendingDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Remove download?") },
+            text = { Text("\"${target.name}\" will be deleted from this device. You can download it again any time.", color = Muted) },
+            confirmButton = { TextButton(onClick = { onDeleteDownload(target); pendingDelete = null }) { Text("Remove") } },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } },
+            containerColor = Panel
+        )
+    }
     var synopsisExpanded by remember(series.id) { mutableStateOf(false) }
     var chapterQuery by remember(series.id) { mutableStateOf("") }
     var chapterLanguage by remember(series.id) { mutableStateOf("ALL") }
@@ -2778,8 +2830,8 @@ private fun DetailScreen(
                         val isDownloaded = downloadKey in downloadedChapterKeys
                         val isDownloading = downloadKey == downloadingChapterKey
                         IconButton(
-                            onClick = { onDownloadChapter(chapter) },
-                            enabled = !isDownloaded && !isDownloading && downloadingChapterKey == null
+                            onClick = { if (isDownloaded) pendingDelete = chapter else onDownloadChapter(chapter) },
+                            enabled = !isDownloading && (isDownloaded || downloadingChapterKey == null)
                         ) {
                             when {
                                 isDownloading -> CircularProgressIndicator(
@@ -2891,7 +2943,7 @@ private fun ReaderScreen(
     motionEnabled: Boolean
 ) {
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage.coerceAtLeast(0))
-    val hasNextChapter = chapterList.indexOfFirst { it.id == chapter.id }.let { it >= 0 && it < chapterList.lastIndex }
+    val hasNextChapter = nextChapterIndex(chapterList, chapter.id) != null
     val pagerState = androidx.compose.foundation.pager.rememberPagerState(initialPage = initialPage.coerceAtLeast(0), pageCount = { pages.size })
     var showModeMenu by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -3219,7 +3271,7 @@ private fun SourcesScreen(
     val sourceScope = rememberCoroutineScope()
 
     val entries = remember {
-        SourceRegistry.sources.sortedWith(
+        SourceRegistry.sources.filter { MatureContentAccess.enabled || !it.isAdultOnly }.sortedWith(
             compareBy<MangaSource> { it.isBroken }
                 .thenBy { it.name.lowercase() }
         )
@@ -3368,18 +3420,21 @@ private fun SourcesScreen(
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(6.dp).clip(CircleShape).background(
-                            when { entry.isBroken -> Color(0xFFE0A0A0); check == "ONLINE" -> Color(0xFF9FCB9A); check == "ERROR" -> Color(0xFFE0A0A0); else -> if (active) Color(0xFF9FC29A) else Color(0xFF77717D) }
+                            when { entry.isBroken -> Color(0xFFE0A0A0); check == "ONLINE" -> Color(0xFF9FCB9A); check in setOf("ERROR", "NO_CHAPTERS", "NO_PAGES", "IMAGES_BLOCKED") -> Color(0xFFE0A0A0); else -> if (active) Color(0xFF9FC29A) else Color(0xFF77717D) }
                         ))
                         Spacer(Modifier.width(6.dp))
                         Text(when {
                             entry.isBroken -> "FLAGGED"
                             check == "CHECKING" -> "CHECKING…"
-                            check == "ONLINE" -> "RESPONDING"
+                            check == "ONLINE" -> "VERIFIED · TITLES, CHAPTERS, PAGES, IMAGES"
                             check == "EMPTY" -> "NO TITLES RETURNED"
+                            check == "NO_CHAPTERS" -> "TITLES LOAD · NO CHAPTERS"
+                            check == "NO_PAGES" -> "CHAPTERS LOAD · NO PAGES"
+                            check == "IMAGES_BLOCKED" -> "PAGES LOAD · IMAGES BLOCKED"
                             check == "ERROR" -> "CONNECTION FAILED"
                             active -> "ENABLED · NOT TESTED"
                             else -> "AVAILABLE"
-                        }, color = when { check == "ERROR" || entry.isBroken -> Color(0xFFE0A0A0); check == "ONLINE" -> Color(0xFF9FCB9A); else -> Muted },
+                        }, color = when { check in setOf("ERROR", "NO_CHAPTERS", "NO_PAGES", "IMAGES_BLOCKED") || entry.isBroken -> Color(0xFFE0A0A0); check == "ONLINE" -> Color(0xFF9FCB9A); else -> Muted },
                             fontSize = 7.sp, letterSpacing = .5.sp, modifier = Modifier.weight(1f))
                         Text(if (isPinned) "PINNED" else "", color = Color(0xFFD0C0DE), fontSize = 6.sp)
                     }
@@ -3396,7 +3451,16 @@ private fun SourcesScreen(
                                 sourceChecks[entry.id] = "CHECKING"
                                 sourceScope.launch {
                                     sourceChecks[entry.id] = try {
-                                        if (entry.popular(0).isNotEmpty()) "ONLINE" else "EMPTY"
+                                        // Full chain: titles -> chapters -> pages -> a real image fetch.
+                                        val titles = entry.popular(0)
+                                        if (titles.isEmpty()) "EMPTY" else {
+                                            val chapterList = entry.chapters(titles.first())
+                                            if (chapterList.isEmpty()) "NO_CHAPTERS" else {
+                                                val pageList = entry.pages(chapterList.first()).pages
+                                                if (pageList.isEmpty()) "NO_PAGES"
+                                                else if (NoirNetwork.probeImage(pageList.first())) "ONLINE" else "IMAGES_BLOCKED"
+                                            }
+                                        }
                                     } catch (_: Exception) { "ERROR" }
                                 }
                             }.padding(vertical = 9.dp), contentAlignment = Alignment.Center) {

@@ -18,10 +18,7 @@ object OfflineChapterStore {
     private const val PREFS = "noir_offline"
     private const val INDEX = "downloaded_chapters"
     private val lock = Any()
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(45, TimeUnit.SECONDS)
-        .build()
+    private val client get() = NoirNetwork.client
 
     fun key(series: Series, chapter: Chapter): String =
         "${series.sourceId}:${series.id}:${chapter.id}"
@@ -68,7 +65,6 @@ object OfflineChapterStore {
             pageUrls.forEachIndexed { index, url ->
                 val request = Request.Builder()
                     .url(url)
-                    .header("User-Agent", "NOIR-Reader/1.0 (Android)")
                     .build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
@@ -98,11 +94,66 @@ object OfflineChapterStore {
         }
     }
 
-    private fun chapterDirectory(context: Context, series: Series, chapter: Chapter): File {
-        fun safe(value: String) = value.replace(Regex("[^A-Za-z0-9._-]"), "_")
-        return File(
-            File(File(context.filesDir, "offline_chapters"), safe(series.sourceId) + "_" + safe(series.id)),
-            safe(chapter.id)
-        )
+    /** Removes one downloaded chapter from the device and from the index. */
+    suspend fun delete(context: Context, series: Series, chapter: Chapter) = withContext(Dispatchers.IO) {
+        chapterDirectory(context, series, chapter).deleteRecursively()
+        synchronized(lock) {
+            val keys = downloadedKeys(context).toMutableSet()
+            keys.remove(key(series, chapter))
+            val array = JSONArray()
+            keys.forEach(array::put)
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putString(INDEX, array.toString()).commit()
+        }
     }
+
+    /** Keeps the chapter list of a series with downloads so those chapters still open without a connection. */
+    fun saveChapterList(context: Context, series: Series, chapters: List<Chapter>) {
+        runCatching {
+            val array = JSONArray()
+            chapters.forEach { c ->
+                array.put(org.json.JSONObject()
+                    .put("id", c.id).put("name", c.name).put("number", c.number).put("language", c.language)
+                    .put("sourceUrl", c.sourceUrl ?: org.json.JSONObject.NULL)
+                    .put("sourceTitle", c.sourceTitle ?: org.json.JSONObject.NULL)
+                    .put("sourceBranch", c.sourceBranch ?: org.json.JSONObject.NULL)
+                    .put("sourceUploadDate", c.sourceUploadDate)
+                    .put("sourceVolume", c.sourceVolume)
+                    .put("sourceScanlator", c.sourceScanlator ?: org.json.JSONObject.NULL))
+            }
+            val file = chapterListFile(context, series)
+            file.parentFile?.mkdirs()
+            file.writeText(array.toString())
+        }
+    }
+
+    fun cachedChapterList(context: Context, series: Series): List<Chapter> = runCatching {
+        val file = chapterListFile(context, series)
+        if (!file.isFile) return@runCatching emptyList<Chapter>()
+        val array = JSONArray(file.readText())
+        buildList {
+            for (i in 0 until array.length()) {
+                val o = array.getJSONObject(i)
+                fun text(name: String) = if (o.isNull(name)) null else o.optString(name)
+                add(Chapter(
+                    id = o.optString("id"), name = o.optString("name"), number = o.optString("number"),
+                    language = o.optString("language"), sourceUrl = text("sourceUrl"),
+                    sourceTitle = text("sourceTitle"), sourceBranch = text("sourceBranch"),
+                    sourceUploadDate = o.optLong("sourceUploadDate", 0L),
+                    sourceVolume = o.optInt("sourceVolume", 0), sourceScanlator = text("sourceScanlator")
+                ))
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun safe(value: String) = value.replace(Regex("[^A-Za-z0-9._-]"), "_")
+
+    private fun seriesDirectory(context: Context, series: Series): File =
+        File(File(context.filesDir, "offline_chapters"), safe(series.sourceId) + "_" + safe(series.id))
+
+    private fun chapterListFile(context: Context, series: Series): File =
+        File(seriesDirectory(context, series), "_chapters.json")
+
+    private fun chapterDirectory(context: Context, series: Series, chapter: Chapter): File =
+        File(seriesDirectory(context, series), safe(chapter.id))
 }

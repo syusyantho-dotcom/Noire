@@ -56,6 +56,7 @@ interface MangaSource {
     val language: String get() = ""
     val category: String get() = "Manga"
     val isBroken: Boolean get() = false
+    val isAdultOnly: Boolean get() = false
     suspend fun iconUrl(): String? = null
     suspend fun popular(page: Int = 0): List<Series>
     suspend fun search(query: String, page: Int = 0): List<Series>

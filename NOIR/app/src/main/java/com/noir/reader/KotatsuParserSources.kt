@@ -77,6 +77,8 @@ private class KotatsuMangaSource(
     override val language: String = parserSource.locale.ifBlank { "Multi" }
     override val category: String = parserSource.contentType.name.replace('_', ' ')
     override val isBroken: Boolean = parserSource.isBroken
+    override val isAdultOnly: Boolean = parserSource.contentType.name.contains("HENTAI", ignoreCase = true)
+    @Volatile private var siteOrigin: String? = null
 
     override suspend fun iconUrl(): String? = withContext(Dispatchers.IO) {
         runCatching {
@@ -130,8 +132,12 @@ private class KotatsuMangaSource(
             order = selectedOrder,
             filter = filter
         ).asSequence()
-            .filter { MatureContentAccess.enabled || it.contentRating != ContentRating.ADULT }
+            .filter { MatureContentAccess.enabled || (!isAdultOnly && it.contentRating != ContentRating.ADULT) }
             .map { manga ->
+                NoirNetwork.originOf(manga.publicUrl)?.let { origin ->
+                    siteOrigin = origin
+                    NoirNetwork.learn(manga.coverUrl, origin)
+                }
                 Series(
                     id = manga.id.toString(),
                     title = manga.title,
@@ -148,6 +154,7 @@ private class KotatsuMangaSource(
 
     override suspend fun chapters(series: Series): List<Chapter> = withContext(Dispatchers.IO) {
         val parser = host.newParserInstance(parserSource)
+        NoirNetwork.originOf(series.sourcePublicUrl)?.let { siteOrigin = it }
         val details = parser.getDetails(series.toParserManga())
         details.chapters.orEmpty().map { item ->
             val number = item.numberString() ?: "?"
@@ -180,6 +187,7 @@ private class KotatsuMangaSource(
             source = parserSource
         )
         val urls = parser.getPages(model).map { page -> parser.getPageUrl(page) }
+        siteOrigin?.let { origin -> urls.forEach { NoirNetwork.learn(it, origin) } }
         ChapterPages(chapter.id, urls)
     }
 
