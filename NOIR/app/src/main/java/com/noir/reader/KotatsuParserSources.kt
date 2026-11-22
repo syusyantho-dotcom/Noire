@@ -118,22 +118,21 @@ private class KotatsuMangaSource(
         val selectedTag = tagKey?.let { key -> filterOptions?.availableTags?.firstOrNull { it.key == key } }
         val filter = MangaListFilter(
             query = query?.takeIf { it.isNotBlank() },
-            // Keep the parser filter to one rating: several community parsers reject multi-rating filters.
-            // NOIR intentionally does not expose adult-rated catalogue entries.
-            contentRating = if (MatureContentAccess.enabled) {
-                setOf(ContentRating.SAFE, ContentRating.SUGGESTIVE, ContentRating.ADULT)
-            } else {
-                setOf(ContentRating.SAFE)
-            },
+            // Several community parsers reject multi-rating filters, so never send more than one rating.
+            // Mature mode sends no rating filter at all (everything); otherwise only SAFE.
+            contentRating = if (MatureContentAccess.enabled) emptySet() else setOf(ContentRating.SAFE),
             states = selectedState?.let { setOf(it) } ?: emptySet(),
             tags = selectedTag?.let { setOf(it) } ?: emptySet()
         )
         val selectedOrder = sortName?.let { requested -> parser.availableSortOrders.firstOrNull { it.name == requested } } ?: order
-        parser.getList(
-            offset = (page.coerceAtLeast(0) * PAGE_SIZE),
-            order = selectedOrder,
-            filter = filter
-        ).asSequence()
+        val listing = try {
+            parser.getList(offset = (page.coerceAtLeast(0) * PAGE_SIZE), order = selectedOrder, filter = filter)
+        } catch (e: Exception) {
+            // A source that refuses even a single rating: retry with no rating filter (adult entries are still filtered below).
+            if (filter.contentRating.isEmpty() || e.message?.contains("rating", ignoreCase = true) != true) throw e
+            parser.getList(offset = (page.coerceAtLeast(0) * PAGE_SIZE), order = selectedOrder, filter = filter.copy(contentRating = emptySet()))
+        }
+        listing.asSequence()
             .filter { MatureContentAccess.enabled || (!isAdultOnly && it.contentRating != ContentRating.ADULT) }
             .map { manga ->
                 NoirNetwork.originOf(manga.publicUrl)?.let { origin ->
