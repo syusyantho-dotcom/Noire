@@ -384,7 +384,7 @@ private fun NoirApp() {
     }
     var introSound by remember { mutableStateOf(prefs.getBoolean("intro_sound", true)) }
     var launchIntro by remember { mutableStateOf(prefs.getBoolean("launch_intro", true)) }
-    var aetherIntro by remember { mutableStateOf(prefs.getBoolean("intro_aether", true)) }
+    var introStyle by remember { mutableStateOf(prefs.getString("intro_style", null) ?: if (prefs.getBoolean("intro_aether", true)) "panels" else "glow") }
     var matureContentEnabled by remember { mutableStateOf(prefs.getBoolean("mature_content_18_plus", false)) }
     SideEffect { MatureContentAccess.enabled = matureContentEnabled }
     var showAbout by remember { mutableStateOf(false) }
@@ -1119,7 +1119,7 @@ private fun NoirApp() {
                         backgroundLabel = when { background.uri == null -> "Starry night (default)"; background.isVideo -> "Custom looping video"; else -> "Custom image / GIF" },
                         onPickBackground = { pickBackground.launch(arrayOf("image/*", "video/*")) },
                         onResetBackground = { background = NoirBackground(); prefs.edit().remove("bg_uri").remove("bg_video").apply() },
-                        aetherIntro = aetherIntro, onAetherIntro = { aetherIntro = it; prefs.edit().putBoolean("intro_aether", it).apply() })
+                        introStyle = introStyle, onIntroStyle = { introStyle = it; prefs.edit().putString("intro_style", it).apply() })
                 }
                 tab == "Home" -> HomeScreen(catalogue, loading, error, recentlyRead.toList(), saved.toList(), seriesProgress.toMap(), readingHistory.toMap(), openSeries, { item -> pendingResumeKey = "${item.sourceId}:${item.id}"; openSeries(item) }, { navigateTab(it) }, background)
                 else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, discoveryCompactGrid, { discoveryCompactGrid = it }, matureContentEnabled, { navigateTab(it) },
@@ -1144,7 +1144,11 @@ private fun NoirApp() {
                     prefs.edit().putBoolean("intro_seen_once", true).apply()
                     if (!prefs.getBoolean("welcome_seen", false)) showWelcome = true
                 }
-                if (aetherIntro) HorizonIntro(introSound, finishIntro) else IntroOverlay(introSound, finishIntro)
+                when (introStyle) {
+                    "horizon" -> HorizonIntro(introSound, finishIntro)
+                    "glow" -> IntroOverlay(introSound, finishIntro)
+                    else -> PanelsIntro(introSound, finishIntro)
+                }
             }
             if (showWelcome && !showIntro) NoirWelcomeWalkthrough(
                 onFinish = {
@@ -2763,7 +2767,7 @@ private fun WeeklyActivityChart(activity: List<Int>) {
 @Composable
 private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, savedCount: Int, trackedCount: Int, averageProgress: Int, latestTitle: String, activityLabel: String, weeklyActivity: List<Int>, onRadar: () -> Unit, onExportBackup: () -> Unit, onImportBackup: () -> Unit, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit,
     backgroundLabel: String = "Starry night", onPickBackground: () -> Unit = {}, onResetBackground: () -> Unit = {},
-    aetherIntro: Boolean = true, onAetherIntro: (Boolean) -> Unit = {}) {
+    introStyle: String = "panels", onIntroStyle: (String) -> Unit = {}) {
     var showMatureConfirmation by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
       Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
@@ -2832,7 +2836,16 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
         }
         SettingSwitch("Intro sound", "Play the short chime when NOIR opens", introSound, onIntroSound)
         SettingSwitch("Launch intro", "Play the NOIR intro every time the app opens", launchIntro, onLaunchIntro)
-        SettingSwitch("Horizon intro", "Earth-rise intro with the NOIR crew (off = glow sheet intro)", aetherIntro, onAetherIntro)
+        Column(Modifier.fillMaxWidth().padding(vertical = 9.dp)) {
+            Text("Intro style", color = White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text("Choose how NOIR opens", color = Muted, fontSize = 10.sp)
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("panels" to "Manga page", "horizon" to "Horizon", "glow" to "Glow sheet").forEach { (key, label) ->
+                    NoirChip(label, introStyle == key, { onIntroStyle(key) })
+                }
+            }
+        }
         SettingSwitch("Mature catalogues (18+)", "Show adult-rated titles from sources that provide them", matureContentEnabled, { enabled -> if (enabled) showMatureConfirmation = true else onMatureContent(false) })
         Spacer(Modifier.height(22.dp))
         Text("BACKUP & RESTORE", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
@@ -5121,6 +5134,245 @@ private fun NoirLogoMark(
         modifier = modifier.size(size),
         contentScale = ContentScale.Fit
     )
+}
+
+private class MotePoint(val x: Float, val y: Float, val size: Float, val speed: Float, val phase: Float)
+
+private class PanelGeo(val pts: List<Offset>, val path: androidx.compose.ui.graphics.Path, val center: Offset, val minX: Float, val maxX: Float, val minY: Float, val maxY: Float)
+
+private fun buildPanels(x0: Float, y0: Float, pw: Float, ph: Float, inset: Float): List<PanelGeo> {
+    val fr = listOf(
+        listOf(0f to 0f, 0.62f to 0f, 0.58f to 0.27f, 0f to 0.27f),
+        listOf(0.62f to 0f, 1f to 0f, 1f to 0.27f, 0.58f to 0.27f),
+        listOf(0f to 0.27f, 1f to 0.27f, 1f to 0.52f, 0f to 0.52f),
+        listOf(0f to 0.52f, 0.45f to 0.52f, 0.49f to 0.76f, 0f to 0.76f),
+        listOf(0.45f to 0.52f, 1f to 0.52f, 1f to 0.76f, 0.49f to 0.76f),
+        listOf(0f to 0.76f, 1f to 0.76f, 1f to 1f, 0f to 1f)
+    )
+    return fr.map { poly ->
+        val raw = poly.map { (fx, fy) -> Offset(x0 + fx * pw, y0 + fy * ph) }
+        val c = Offset(raw.map { it.x }.average().toFloat(), raw.map { it.y }.average().toFloat())
+        val pts = raw.map { p ->
+            val dx = c.x - p.x
+            val dy = c.y - p.y
+            val len = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
+            Offset(p.x + dx / len * inset, p.y + dy / len * inset)
+        }
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(pts[0].x, pts[0].y)
+            for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
+            close()
+        }
+        PanelGeo(pts, path, c, pts.minOf { it.x }, pts.maxOf { it.x }, pts.minOf { it.y }, pts.maxOf { it.y })
+    }
+}
+
+/** "The Page": a manga page draws itself in light, then the NOIR crew fills the panels and the camera pushes through the title. */
+@Composable
+private fun PanelsIntro(playSound: Boolean, onFinished: () -> Unit) {
+    val context = LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val overall = remember { Animatable(0f) }
+    val zoom = remember { Animatable(0f) }
+    val kick = remember { Animatable(0f) }
+    val ring = remember { Animatable(0f) }
+    val word = remember { Animatable(0f) }
+    val tag = remember { Animatable(0f) }
+    val push = remember { Animatable(0f) }
+    val draws = remember { List(6) { Animatable(0f) } }
+    val fills = remember { List(6) { Animatable(0f) } }
+    val pops = remember { List(5) { Animatable(0f) } }
+    val loop = rememberInfiniteTransition(label = "panels-loop")
+    val phase = loop.animateFloat(0f, 1f, infiniteRepeatable(tween(6000, easing = LinearEasing)), label = "panels-phase")
+    val motes = remember {
+        val r = java.util.Random(33)
+        List(48) { MotePoint(r.nextFloat(), r.nextFloat(), 0.6f + r.nextFloat() * 1.4f, 0.4f + r.nextFloat() * 0.9f, r.nextFloat()) }
+    }
+
+    LaunchedEffect(Unit) {
+        var player: MediaPlayer? = null
+        try {
+            player = startIntroSound(context, playSound)
+            kotlinx.coroutines.coroutineScope {
+                launch { zoom.animateTo(1f, tween(3900, easing = LinearEasing)) }
+                launch { overall.animateTo(1f, tween(350)) }
+                draws.forEachIndexed { i, a -> launch { delay(i * 90L); a.animateTo(1f, tween(950, easing = CubicBezierEasing(0.3f, 0.7f, 0.2f, 1f))) } }
+                launch {
+                    delay(1250)
+                    runCatching { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
+                    kotlinx.coroutines.coroutineScope {
+                        launch { kick.animateTo(1f, tween(90)); kick.animateTo(0f, tween(900)) }
+                        launch { ring.animateTo(1f, tween(1100, easing = LinearOutSlowInEasing)) }
+                        fills.forEachIndexed { i, a -> launch { delay(i * 90L); a.animateTo(1f, tween(700)) } }
+                        pops.forEachIndexed { i, a -> launch { delay(220L + i * 110L); a.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 240f)) } }
+                        launch { delay(150); word.animateTo(1f, tween(950, easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f))) }
+                        launch { delay(650); tag.animateTo(1f, tween(700)) }
+                    }
+                    delay(800)
+                    kotlinx.coroutines.coroutineScope {
+                        launch { push.animateTo(1f, tween(720, easing = CubicBezierEasing(0.5f, 0f, 0.8f, 0.4f))) }
+                        launch { overall.animateTo(0f, tween(720)) }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        } finally {
+            player?.let { mp ->
+                runCatching { if (mp.isPlaying) mp.stop() }
+                runCatching { mp.release() }
+            }
+            onFinished()
+        }
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF010102)).graphicsLayer { alpha = overall.value }) {
+        val wPx = with(density) { maxWidth.toPx() }
+        val hPx = with(density) { maxHeight.toPx() }
+        val margin = with(density) { 16.dp.toPx() }
+        val pageTop = with(density) { 44.dp.toPx() }
+        val pageBottom = with(density) { 40.dp.toPx() }
+        val panels = remember(wPx, hPx) { buildPanels(margin, pageTop, wPx - margin * 2f, hPx - pageTop - pageBottom, with(density) { 4.dp.toPx() }) }
+        val titleCenter = panels[2].center
+        val catPanels = remember { intArrayOf(0, 1, 3, 4, 5) }
+        val cats = remember {
+            listOf(
+                NoirMascotKind.SIT to (381f / 420f), NoirMascotKind.PEEK to (223f / 420f), NoirMascotKind.STAR to (348f / 420f),
+                NoirMascotKind.SCARF to (420f / 384f), NoirMascotKind.SLEEP to (304f / 420f)
+            )
+        }
+
+        Box(
+            Modifier.fillMaxSize().graphicsLayer {
+                val z = 1f + 0.05f * zoom.value + 0.012f * kick.value + 0.6f * push.value * push.value
+                scaleX = z
+                scaleY = z
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.40f)
+                rotationZ = kotlin.math.sin(phase.value * 2f * Math.PI.toFloat()) * 0.35f
+            }
+        ) {
+            Canvas(Modifier.fillMaxSize()) {
+                val tau = 2f * Math.PI.toFloat()
+                val violet = Color(0xFF9B7BFF)
+                // Soft glow behind the page.
+                drawCircle(
+                    Brush.radialGradient(listOf(Color(0xFF4B2BC8).copy(alpha = 0.30f), Color.Transparent), center = Offset(size.width / 2f, size.height * 0.42f), radius = size.width * 1.1f),
+                    radius = size.width * 1.1f, center = Offset(size.width / 2f, size.height * 0.42f)
+                )
+                val edge = androidx.compose.ui.graphics.lerp(violet, Color.White, kick.value)
+                val measure = androidx.compose.ui.graphics.PathMeasure()
+                panels.forEachIndexed { i, pl ->
+                    val f = fills[i].value
+                    if (f > 0.001f) {
+                        drawPath(
+                            pl.path,
+                            Brush.linearGradient(listOf(if (i == 2) Color(0xFF241548) else Color(0xFF190F30), Color(0xFF06030C)), start = Offset(pl.minX, pl.minY), end = Offset(pl.maxX, pl.maxY)),
+                            alpha = f
+                        )
+                        drawPath(
+                            pl.path,
+                            Brush.radialGradient(listOf(Color(0xFF7A55FF).copy(alpha = 0.26f), Color.Transparent), center = pl.center, radius = (pl.maxX - pl.minX).coerceAtLeast(pl.maxY - pl.minY) * 0.65f),
+                            alpha = f * (0.8f + 0.2f * kotlin.math.sin((phase.value * 2f + i * 0.2f) * tau))
+                        )
+                    }
+                    val d = draws[i].value
+                    if (d > 0.001f) {
+                        measure.setPath(pl.path, false)
+                        val seg = androidx.compose.ui.graphics.Path()
+                        measure.getSegment(0f, measure.length * d, seg, true)
+                        val round = androidx.compose.ui.graphics.StrokeJoin.Round
+                        drawPath(seg, edge.copy(alpha = 0.16f + 0.2f * kick.value), style = Stroke(8.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = round))
+                        drawPath(seg, edge.copy(alpha = 0.40f), style = Stroke(3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = round))
+                        drawPath(seg, Color.White.copy(alpha = 0.92f), style = Stroke(1.2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = round))
+                    }
+                }
+                if (ring.value in 0.001f..0.999f) {
+                    val r = ring.value * size.width * 1.15f
+                    drawCircle(Color(0xFFCDBBFF).copy(alpha = (1f - ring.value) * 0.55f), radius = r, center = titleCenter, style = Stroke(3.dp.toPx() * (1f - ring.value) + 1f))
+                }
+                // Sparkle beside the title.
+                val sp = word.value
+                if (sp > 0.01f) {
+                    val c = Offset(titleCenter.x + size.width * 0.31f, titleCenter.y - size.height * 0.055f)
+                    val s = 15.dp.toPx() * sp * (0.9f + 0.1f * kotlin.math.sin(phase.value * tau * 3f))
+                    val path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(c.x, c.y - s)
+                        quadraticBezierTo(c.x + 0.07f * s, c.y - 0.07f * s, c.x + s * 0.9f, c.y)
+                        quadraticBezierTo(c.x + 0.07f * s, c.y + 0.07f * s, c.x, c.y + s)
+                        quadraticBezierTo(c.x - 0.07f * s, c.y + 0.07f * s, c.x - s * 0.9f, c.y)
+                        quadraticBezierTo(c.x - 0.07f * s, c.y - 0.07f * s, c.x, c.y - s)
+                        close()
+                    }
+                    drawPath(path, Color.White.copy(alpha = sp.coerceAtMost(1f)))
+                }
+                if (kick.value > 0.001f) drawRect(Color.White, alpha = 0.10f * kick.value)
+            }
+
+            cats.forEachIndexed { i, (kind, aspect) ->
+                val pl = panels[catPanels[i]]
+                val availW = (pl.maxX - pl.minX) * 0.58f
+                val availH = (pl.maxY - pl.minY) * 0.80f
+                val catW = minOf(availW, availH / aspect)
+                val catH = catW * aspect
+                val bottomAligned = kind == NoirMascotKind.PEEK || kind == NoirMascotKind.SLEEP
+                val left = pl.center.x - catW / 2f
+                val top = if (bottomAligned) pl.maxY - catH - with(density) { 6.dp.toPx() } else pl.center.y - catH / 2f
+                Image(
+                    painter = painterResource(kind.res), contentDescription = null, contentScale = ContentScale.Fit,
+                    modifier = Modifier.width(with(density) { catW.toDp() })
+                        .offset { IntOffset(left.roundToInt(), (top + kotlin.math.sin(phase.value * 2f * Math.PI.toFloat() + i * 1.2f) * 2.dp.toPx()).roundToInt()) }
+                        .graphicsLayer {
+                            val p = pops[i].value
+                            alpha = p.coerceIn(0f, 1f)
+                            val sc = 0.5f + 0.5f * p
+                            scaleX = sc
+                            scaleY = sc
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                        }
+                )
+            }
+
+            Column(
+                Modifier.fillMaxWidth().offset { IntOffset(0, (titleCenter.y - 44.dp.toPx()).roundToInt()) },
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                val sweep = -500f + word.value * 2000f
+                Text(
+                    "NOIR",
+                    modifier = Modifier.graphicsLayer {
+                        alpha = word.value
+                        translationY = (1f - word.value) * 18.dp.toPx()
+                        val sc = 0.94f + 0.06f * word.value
+                        scaleX = sc
+                        scaleY = sc
+                    },
+                    style = androidx.compose.ui.text.TextStyle(
+                        brush = Brush.linearGradient(
+                            colorStops = arrayOf(0f to Color(0xFFB9ABEA), 0.5f to Color.White, 1f to Color(0xFFB9ABEA)),
+                            start = Offset(sweep, 0f), end = Offset(sweep + 520f, 0f)
+                        ),
+                        fontSize = 62.sp, fontWeight = FontWeight.Bold, letterSpacing = 14.sp
+                    )
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "A UNIVERSE BETWEEN THE PAGES", color = Color(0xFFC9BBEE), fontSize = 8.sp, letterSpacing = 2.8.sp,
+                    modifier = Modifier.graphicsLayer { alpha = tag.value; translationY = (1f - tag.value) * 8.dp.toPx() }
+                )
+            }
+        }
+
+        // Drifting ink dust, outside the camera so it reads as depth.
+        Canvas(Modifier.fillMaxSize()) {
+            val tau = 2f * Math.PI.toFloat()
+            motes.forEach { m ->
+                val y = (((m.y - phase.value * m.speed) % 1f) + 1f) % 1f
+                val x = m.x + kotlin.math.sin((phase.value + m.phase) * tau) * 0.012f
+                val tw = 0.5f + 0.5f * kotlin.math.sin((phase.value * 3f + m.phase) * tau)
+                drawCircle(Color(0xFFD7CCFF).copy(alpha = 0.10f + 0.40f * tw), radius = m.size.dp.toPx() * 0.6f, center = Offset(x * size.width, y * size.height))
+            }
+        }
+    }
 }
 
 private class CityLight(val u: Float, val v: Float, val size: Float, val tint: Color, val phase: Float)
