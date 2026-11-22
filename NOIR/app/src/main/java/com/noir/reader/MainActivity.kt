@@ -98,6 +98,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate as rotateDraw
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -725,9 +728,10 @@ private fun NoirApp() {
     val routeDepth = when { selectedChapter != null -> 3; selectedSource != null || selected != null -> 2; else -> 1 }
     val depthHolder = remember { intArrayOf(routeDepth) }
     // +1 = pushing deeper (detail/reader), -1 = going back, 0 = switching tabs.
-    val routeDirection = remember(routeKey) { (routeDepth - depthHolder[0]).also { depthHolder[0] = routeDepth } }
-    val enter = remember(routeKey) { Animatable(if (studioMotion) 0f else 1f) }
-    LaunchedEffect(routeKey) {
+    val animKey = if (selectedChapter != null) "reader:" + selected?.sourceId + ":" + selected?.id else routeKey
+    val routeDirection = remember(animKey) { (routeDepth - depthHolder[0]).also { depthHolder[0] = routeDepth } }
+    val enter = remember(animKey) { Animatable(if (studioMotion) 0f else 1f) }
+    LaunchedEffect(animKey) {
         if (studioMotion) enter.animateTo(1f, tween(if (enteringReader) 480 else 380, easing = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)))
     }
 
@@ -875,8 +879,10 @@ private fun NoirApp() {
         if (chapterToResume != null) selectedChapter = chapterToResume
         pendingResumeKey = null
     }
+    var handoffId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(selectedChapter?.id) {
         val chapter = selectedChapter ?: return@LaunchedEffect
+        if (handoffId == chapter.id) { handoffId = null; return@LaunchedEffect }
         pages = emptyList()
         loading = true
         error = null
@@ -943,6 +949,21 @@ private fun NoirApp() {
                         }
                     },
                     nextChapterReady = isNextChapterPreloaded,
+                    nextPages = selected?.let { item -> nextChapterForReader?.let { preloadedChapterPages[OfflineChapterStore.key(item, it)] } },
+                    onSeamlessNext = { startPage, offsetPx ->
+                        val item = selected
+                        val next = nextChapterForReader
+                        val prepared = if (item != null && next != null) preloadedChapterPages.remove(OfflineChapterStore.key(item, next)) else null
+                        if (next != null && prepared != null) {
+                            carryScrollOffset = offsetPx
+                            readingProgress[next.id] = startPage
+                            pages = prepared
+                            loading = false
+                            error = null
+                            handoffId = next.id
+                            selectedChapter = next
+                        }
+                    },
                     readerMode = readerMode,
                     gesturePreset = studioGestures,
                     motionEnabled = studioMotion,
@@ -3431,7 +3452,7 @@ private class NoirFlingBehavior(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, contentScale: ContentScale, reserveHeight: Boolean = false, onTap: () -> Unit = {}) {
+private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, contentScale: ContentScale, reserveHeight: Boolean = false, onTap: () -> Unit = {}, onDoubleTap: (() -> Unit)? = null) {
     var zoom by remember(pageUrl) { mutableFloatStateOf(1f) }
     var panX by remember(pageUrl) { mutableFloatStateOf(0f) }
     var panY by remember(pageUrl) { mutableFloatStateOf(0f) }
@@ -3482,7 +3503,8 @@ private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, cont
             .combinedClickable(
                 onClick = onTap,
                 onDoubleClick = {
-                    if (zoom > 1.05f) { zoom = 1f; panX = 0f; panY = 0f }
+                    if (onDoubleTap != null) onDoubleTap()
+                    else if (zoom > 1.05f) { zoom = 1f; panX = 0f; panY = 0f }
                     else zoom = 2.25f
                 }
             ))
@@ -3503,14 +3525,18 @@ private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, cont
     }
 }
 
+private var carryScrollOffset = 0
+
 @Composable
 private fun ReaderScreen(
     series: Series?, chapter: Chapter, chapterList: List<Chapter>, pages: List<String>, loading: Boolean, error: String?,
-    initialPage: Int, nextChapterReady: Boolean, readerMode: String, gesturePreset: String, onModeChange: (String) -> Unit,
+    initialPage: Int, nextChapterReady: Boolean, nextPages: List<String>?, onSeamlessNext: (Int, Int) -> Unit, readerMode: String, gesturePreset: String, onModeChange: (String) -> Unit,
     onProgress: (Int) -> Unit, onNextChapter: () -> Unit, onBack: () -> Unit,
     motionEnabled: Boolean
 ) {
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage.coerceAtLeast(0))
+    val startOffset = remember { carryScrollOffset.also { carryScrollOffset = 0 } }
+    val firstRestore = remember { booleanArrayOf(true) }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage.coerceAtLeast(0), initialFirstVisibleItemScrollOffset = startOffset)
     val hasNextChapter = nextChapterIndex(chapterList, chapter.id) != null
     val pagerState = androidx.compose.foundation.pager.rememberPagerState(initialPage = initialPage.coerceAtLeast(0), pageCount = { pages.size })
     var showModeMenu by remember { mutableStateOf(false) }
@@ -3551,8 +3577,13 @@ private fun ReaderScreen(
         animationSpec = tween(520, easing = FastOutSlowInEasing),
         label = "noir-cinema-alpha"
     )
+    val isFirstChapter = remember(chapter.id, chapterList) {
+        val numberIsOne = chapter.number.toFloatOrNull() == 1f
+        val hasPrevious = chapterList.any { c -> nextChapterIndex(chapterList, c.id)?.let { chapterList[it].id } == chapter.id }
+        numberIsOne || !hasPrevious
+    }
     LaunchedEffect(chapter.id, pages.size, loading) {
-        if (pages.isNotEmpty() && !loading && initialPage <= 0) {
+        if (pages.isNotEmpty() && !loading && initialPage <= 0 && isFirstChapter) {
             showChapterCinema = true
             delay(3000)
             showChapterCinema = false
@@ -3568,7 +3599,10 @@ private fun ReaderScreen(
     LaunchedEffect(pages.size, readerMode) {
         if (pages.isEmpty()) return@LaunchedEffect
         val target = lastKnownPage.coerceIn(0, pages.lastIndex)
-        if (isPaged) pagerState.scrollToPage(target) else listState.scrollToItem(target)
+        if (isPaged) pagerState.scrollToPage(target) else {
+            listState.scrollToItem(target, if (firstRestore[0]) startOffset else 0)
+            firstRestore[0] = false
+        }
         snapshotFlow { if (isPaged) pagerState.currentPage else listState.firstVisibleItemIndex }
             .collect { current ->
                 lastKnownPage = current.coerceIn(0, pages.lastIndex)
@@ -3615,8 +3649,17 @@ private fun ReaderScreen(
 
     // In vertical/webtoon mode, advance only after the reader reaches the actual
     // bottom during a user-driven scroll. A per-chapter guard prevents duplicate loads.
-    LaunchedEffect(chapter.id, pages.size, isPaged, hasNextChapter) {
-        if (!isPaged && pages.size > 1 && hasNextChapter) {
+    val nextChapterModel = nextChapterIndex(chapterList, chapter.id)?.let { chapterList[it] }
+    LaunchedEffect(chapter.id, pages.size, nextPages?.size, isPaged) {
+        if (!isPaged && !nextPages.isNullOrEmpty() && pages.isNotEmpty()) {
+            snapshotFlow { Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, listState.isScrollInProgress) }
+                .collect { (index, offset, scrolling) ->
+                    if (!scrolling && index > pages.size) onSeamlessNext(index - pages.size - 1, offset)
+                }
+        }
+    }
+    LaunchedEffect(chapter.id, pages.size, isPaged, hasNextChapter, nextPages == null) {
+        if (!isPaged && pages.size > 1 && hasNextChapter && nextPages == null) {
             var advanced = false
             snapshotFlow {
                 listState.isScrollInProgress && !listState.canScrollForward &&
@@ -3666,15 +3709,64 @@ private fun ReaderScreen(
                         onTap = { if (!showChapterCinema && !showSettings && !showModeMenu) showReaderControls = !showReaderControls }
                     )
                 }
-                else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
-                    flingBehavior = noirFling,
-                    userScrollEnabled = true,
-                    verticalArrangement = Arrangement.spacedBy(if (readerMode == "Webtoon") 0.dp else pageGap.dp),
-                    contentPadding = PaddingValues(bottom = 18.dp)) {
-                    items(count = pages.size, key = { index -> "reader-page-$index" }, contentType = { "reader-page" }) { index ->
-                        ReaderPageImage(pageUrl = pages[index], modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth,
-                            reserveHeight = true,
-                            onTap = { if (!showChapterCinema && !showSettings && !showModeMenu) showReaderControls = !showReaderControls })
+                else -> {
+                    var gZoom by remember { mutableFloatStateOf(1f) }
+                    var gPanX by remember { mutableFloatStateOf(0f) }
+                    val toggleZoom = { gZoom = if (gZoom > 1.05f || gZoom < 0.95f) 1f else 2f; gPanX = 0f }
+                    Box(
+                        Modifier.fillMaxSize().clipToBounds()
+                            .pointerInput(Unit) {
+                                androidx.compose.foundation.gestures.awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                    do {
+                                        val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                        val pressed = event.changes.count { it.pressed }
+                                        if (pressed >= 2) {
+                                            val z = event.calculateZoom()
+                                            val pan = event.calculatePan()
+                                            gZoom = (gZoom * z).coerceIn(0.7f, 4f)
+                                            val maxPan = (size.width * (gZoom - 1f) / 2f).coerceAtLeast(0f)
+                                            gPanX = (gPanX + pan.x).coerceIn(-maxPan, maxPan)
+                                            event.changes.forEach { it.consume() }
+                                        } else if (pressed == 1 && gZoom > 1.01f) {
+                                            val pan = event.calculatePan()
+                                            val maxPan = size.width * (gZoom - 1f) / 2f
+                                            gPanX = (gPanX + pan.x).coerceIn(-maxPan, maxPan)
+                                        }
+                                    } while (event.changes.any { it.pressed })
+                                }
+                            }
+                            .graphicsLayer { scaleX = gZoom; scaleY = gZoom; translationX = gPanX }
+                    ) {
+                        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
+                            flingBehavior = noirFling,
+                            userScrollEnabled = true,
+                            verticalArrangement = Arrangement.spacedBy(if (readerMode == "Webtoon") 0.dp else pageGap.dp),
+                            contentPadding = PaddingValues(bottom = 18.dp)) {
+                            items(count = pages.size, key = { index -> "reader-page-$index" }, contentType = { "reader-page" }) { index ->
+                                ReaderPageImage(pageUrl = pages[index], modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth,
+                                    reserveHeight = true,
+                                    onDoubleTap = toggleZoom,
+                                    onTap = { if (!showChapterCinema && !showSettings && !showModeMenu) showReaderControls = !showReaderControls })
+                            }
+                            if (!nextPages.isNullOrEmpty()) {
+                                item(key = "chapter-divider", contentType = "divider") {
+                                    Box(Modifier.fillMaxWidth().padding(vertical = 14.dp), contentAlignment = Alignment.Center) {
+                                        Text(
+                                            "NEXT  ·  " + (nextChapterModel?.name ?: "Next chapter").uppercase(),
+                                            color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.clip(RoundedCornerShape(30.dp)).background(Color(0xCC19171F))
+                                                .border(1.dp, Color(0x557F788B), RoundedCornerShape(30.dp)).padding(horizontal = 14.dp, vertical = 7.dp)
+                                        )
+                                    }
+                                }
+                                items(count = nextPages.size, key = { index -> "reader-next-$index" }, contentType = { "reader-page" }) { index ->
+                                    ReaderPageImage(pageUrl = nextPages[index], modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth,
+                                        reserveHeight = true, onDoubleTap = toggleZoom,
+                                        onTap = { if (!showChapterCinema && !showSettings && !showModeMenu) showReaderControls = !showReaderControls })
+                                }
+                            }
+                        }
                     }
                 }
             }
