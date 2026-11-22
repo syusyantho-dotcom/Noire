@@ -8,6 +8,12 @@ import android.os.Build
 import android.content.Context
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.graphics.SurfaceTexture
+import android.net.Uri
+import android.view.Surface
+import android.view.TextureView
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.draw.clipToBounds
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -201,6 +207,7 @@ class MainActivity : ComponentActivity() {
                 .diskCache { coil.disk.DiskCache.Builder().directory(applicationContext.cacheDir.resolve("noir_images")).maxSizePercent(0.04).build() }
                 .respectCacheHeaders(false)
                 .crossfade(160)
+                .components { if (Build.VERSION.SDK_INT >= 28) add(coil.decode.ImageDecoderDecoder.Factory()) else add(coil.decode.GifDecoder.Factory()) }
                 .build()
         )
         val radarConstraints = Constraints.Builder()
@@ -272,6 +279,15 @@ private fun NoirApp() {
         }.onSuccess {
             android.widget.Toast.makeText(context, "Backup exported", android.widget.Toast.LENGTH_SHORT).show()
         }.onFailure { android.widget.Toast.makeText(context, "Backup failed: ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
+    }
+    var background by remember { mutableStateOf(NoirBackground(prefs.getString("bg_uri", null), prefs.getBoolean("bg_video", false))) }
+    val pickBackground = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            val video = context.contentResolver.getType(uri).orEmpty().startsWith("video/")
+            background = NoirBackground(uri.toString(), video)
+            prefs.edit().putString("bg_uri", uri.toString()).putBoolean("bg_video", video).apply()
+        }
     }
     val importBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) runCatching {
@@ -1108,11 +1124,14 @@ private fun NoirApp() {
                         { introSound = it; prefs.edit().putBoolean("intro_sound", it).apply() },
                         { launchIntro = it; prefs.edit().putBoolean("launch_intro", it).apply() },
                         { matureContentEnabled = it; prefs.edit().putBoolean("mature_content_18_plus", it).apply() },
-                        { showAbout = true }, { showWhatsNew = true }, { navigateTab(it) })
+                        { showAbout = true }, { showWhatsNew = true }, { navigateTab(it) },
+                        backgroundLabel = when { background.uri == null -> "Starry night (default)"; background.isVideo -> "Custom looping video"; else -> "Custom image / GIF" },
+                        onPickBackground = { pickBackground.launch(arrayOf("image/*", "video/*")) },
+                        onResetBackground = { background = NoirBackground(); prefs.edit().remove("bg_uri").remove("bg_video").apply() })
                 }
-                tab == "Home" -> HomeScreen(catalogue, loading, error, recentlyRead.toList(), saved.toList(), seriesProgress.toMap(), readingHistory.toMap(), openSeries, { item -> pendingResumeKey = "${item.sourceId}:${item.id}"; openSeries(item) }, { navigateTab(it) })
+                tab == "Home" -> HomeScreen(catalogue, loading, error, recentlyRead.toList(), saved.toList(), seriesProgress.toMap(), readingHistory.toMap(), openSeries, { item -> pendingResumeKey = "${item.sourceId}:${item.id}"; openSeries(item) }, { navigateTab(it) }, background)
                 else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, discoveryCompactGrid, { discoveryCompactGrid = it }, matureContentEnabled, { navigateTab(it) },
-                    sourceGenres = sourceGenres, onServerGenre = { serverGenre = it }, incomingGenre = incomingGenre, onIncomingGenreConsumed = { incomingGenre = null })
+                    sourceGenres = sourceGenres, onServerGenre = { serverGenre = it }, incomingGenre = incomingGenre, onIncomingGenreConsumed = { incomingGenre = null }, background = background)
             }
             }
             }
@@ -1139,6 +1158,160 @@ private fun NoirApp() {
                 }
             )
           }
+        }
+    }
+}
+
+private val launchSeed: Long = java.util.Random().nextLong()
+
+data class NoirBackground(val uri: String? = null, val isVideo: Boolean = false)
+
+private class StarSpec(val x: Float, val y: Float, val size: Float, val phase: Float, val twinkle: Int, val drift: Int, val tint: Color)
+
+@Composable
+private fun StarryNightBackdrop(modifier: Modifier = Modifier) {
+    val stars = remember {
+        val r = java.util.Random(7)
+        val tints = listOf(Color.White, Color(0xFFCFE3FF), Color(0xFFFFE6F7), Color(0xFFD9CCFF), Color(0xFFBFFAF4))
+        List(120) {
+            StarSpec(r.nextFloat(), r.nextFloat(), 0.5f + r.nextFloat() * 1.5f + if (r.nextInt(9) == 0) 1.4f else 0f,
+                r.nextFloat(), 6 + r.nextInt(14), 1 + r.nextInt(2), tints[r.nextInt(tints.size)])
+        }
+    }
+    val transition = rememberInfiniteTransition(label = "starry-night")
+    val t = transition.animateFloat(0f, 1f, infiniteRepeatable(tween(48000, easing = LinearEasing)), label = "starry-t")
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val time = t.value
+        val tau = 2f * Math.PI.toFloat()
+        drawRect(Brush.verticalGradient(listOf(Color(0xFF05030F), Color(0xFF0B0724), Color(0xFF050309))))
+        fun nebula(cx: Float, cy: Float, r: Float, color: Color, a: Float) {
+            drawCircle(Brush.radialGradient(listOf(color.copy(alpha = a), Color.Transparent), center = Offset(cx, cy), radius = r), radius = r, center = Offset(cx, cy))
+        }
+        nebula(w * (0.22f + 0.10f * kotlin.math.sin(time * tau)), h * (0.18f + 0.05f * kotlin.math.cos(time * tau)), w * 0.85f, Color(0xFF6A3DFF), 0.42f)
+        nebula(w * (0.80f + 0.08f * kotlin.math.cos(time * tau * 2f)), h * (0.30f + 0.06f * kotlin.math.sin(time * tau * 2f)), w * 0.75f, Color(0xFFE23CC0), 0.28f)
+        nebula(w * (0.55f + 0.12f * kotlin.math.sin(time * tau + 2f)), h * (0.55f + 0.05f * kotlin.math.cos(time * tau + 1f)), w * 0.8f, Color(0xFF2B6BFF), 0.26f)
+        nebula(w * (0.10f + 0.06f * kotlin.math.cos(time * tau + 3f)), h * (0.70f + 0.04f * kotlin.math.sin(time * tau)), w * 0.7f, Color(0xFF16C6D6), 0.20f)
+        stars.forEach { s ->
+            val tw = 0.5f + 0.5f * kotlin.math.sin((time * s.twinkle + s.phase) * tau)
+            val a = 0.22f + 0.78f * tw
+            val y = ((s.y - time * s.drift * 0.02f) % 1f + 1f) % 1f
+            val c = Offset(s.x * w, y * h)
+            val r = s.size.dp.toPx() * 0.6f
+            drawCircle(s.tint.copy(alpha = a), radius = r, center = c)
+            if (s.size > 2.2f) {
+                drawCircle(s.tint.copy(alpha = a * 0.22f), radius = r * 4.5f, center = c)
+                val arm = r * 5f * tw
+                drawLine(s.tint.copy(alpha = a * 0.7f), c - Offset(arm, 0f), c + Offset(arm, 0f), strokeWidth = 1f)
+                drawLine(s.tint.copy(alpha = a * 0.7f), c - Offset(0f, arm), c + Offset(0f, arm), strokeWidth = 1f)
+            }
+        }
+        // One shooting star per loop.
+        val shoot = ((time - 0.30f) / 0.04f).coerceIn(0f, 1f)
+        if (shoot > 0f && shoot < 1f) {
+            val head = Offset(w * (0.9f - 0.5f * shoot), h * (0.05f + 0.22f * shoot))
+            val tail = head + Offset(w * 0.12f, -h * 0.045f)
+            drawLine(Brush.linearGradient(listOf(Color.White.copy(alpha = 0.9f * (1f - shoot)), Color.Transparent), start = head, end = tail), head, tail, strokeWidth = 2.dp.toPx())
+        }
+    }
+}
+
+private fun cropVideoToView(view: TextureView, vw: Int, vh: Int) {
+    val w = view.width.toFloat()
+    val h = view.height.toFloat()
+    if (w <= 0f || h <= 0f || vw <= 0 || vh <= 0) return
+    val videoAspect = vw.toFloat() / vh
+    val viewAspect = w / h
+    val m = android.graphics.Matrix()
+    if (videoAspect > viewAspect) m.setScale(videoAspect / viewAspect, 1f, w / 2f, h / 2f)
+    else m.setScale(1f, viewAspect / videoAspect, w / 2f, h / 2f)
+    view.setTransform(m)
+}
+
+/** Muted, looping, centre-cropped video background. */
+@Composable
+private fun VideoBackdrop(uri: String, modifier: Modifier = Modifier) {
+    val ctxForOwner = LocalContext.current
+    val owner = remember(ctxForOwner) {
+        var c: Context = ctxForOwner
+        while (c is android.content.ContextWrapper && c !is androidx.lifecycle.LifecycleOwner) c = c.baseContext
+        c as? androidx.lifecycle.LifecycleOwner
+    }
+    val player = remember(uri) { arrayOfNulls<MediaPlayer>(1) }
+    DisposableEffect(owner, uri) {
+        if (owner == null) return@DisposableEffect onDispose { }
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            runCatching {
+                when (event) {
+                    androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> player[0]?.pause()
+                    androidx.lifecycle.Lifecycle.Event.ON_RESUME -> player[0]?.start()
+                    else -> {}
+                }
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+    AndroidView(
+        modifier = modifier,
+        factory = { ctx ->
+            TextureView(ctx).apply {
+                var surface: Surface? = null
+                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                    override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) {
+                        runCatching {
+                            val mp = MediaPlayer()
+                            player[0] = mp
+                            surface = Surface(st)
+                            mp.setSurface(surface)
+                            mp.setDataSource(ctx, Uri.parse(uri))
+                            mp.isLooping = true
+                            mp.setVolume(0f, 0f)
+                            mp.setOnVideoSizeChangedListener { _, vw, vh ->
+                                tag = intArrayOf(vw, vh)
+                                cropVideoToView(this@apply, vw, vh)
+                            }
+                            mp.setOnPreparedListener { it.start() }
+                            mp.prepareAsync()
+                        }
+                    }
+                    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) {
+                        (tag as? IntArray)?.let { cropVideoToView(this@apply, it[0], it[1]) }
+                    }
+                    override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
+                        runCatching { player[0]?.release() }
+                        player[0] = null
+                        runCatching { surface?.release() }
+                        surface = null
+                        return true
+                    }
+                    override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
+                }
+            }
+        }
+    )
+}
+
+/** Shared page backdrop: starry night by default, or the user's own image, GIF or looping video. */
+@Composable
+private fun NoirBackdrop(background: NoirBackground, scroll: () -> Float, height: androidx.compose.ui.unit.Dp) {
+    Box(Modifier.fillMaxWidth().height(height).clipToBounds().offset { IntOffset(0, (-scroll() * 0.28f).roundToInt()) }) {
+        val mediaUri = background.uri
+        when {
+            mediaUri == null -> StarryNightBackdrop(Modifier.fillMaxSize())
+            background.isVideo -> VideoBackdrop(mediaUri, Modifier.fillMaxSize())
+            else -> AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current).data(Uri.parse(mediaUri)).crossfade(true).build(),
+                contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop
+            )
+        }
+        // Readability scrim: lighter over the colourful sky, fading fully to black toward the content.
+        Canvas(Modifier.fillMaxSize()) {
+            val dim = if (background.uri == null) 0.10f else 0.38f
+            drawRect(Color.Black.copy(alpha = dim))
+            drawRect(Brush.verticalGradient(0f to Color.Transparent, 0.55f to Color(0x99070709), 1f to Color.Black))
+            drawRect(Color.Black, alpha = (scroll() / (size.height * 0.9f)).coerceIn(0f, 1f))
         }
     }
 }
@@ -1236,7 +1409,8 @@ private fun CatalogueScreen(
     onOpen: (Series) -> Unit, compactGrid: Boolean, onCompactGridChange: (Boolean) -> Unit,
     matureContentEnabled: Boolean, onTab: (String) -> Unit,
     sourceGenres: List<String> = emptyList(), onServerGenre: (String?) -> Unit = {},
-    incomingGenre: String? = null, onIncomingGenreConsumed: () -> Unit = {}
+    incomingGenre: String? = null, onIncomingGenreConsumed: () -> Unit = {},
+    background: NoirBackground = NoirBackground()
 ) {
     val context = LocalContext.current
     val discoveryPrefs = remember(context) { context.getSharedPreferences("noir_discovery", Context.MODE_PRIVATE) }
@@ -1373,19 +1547,7 @@ private fun CatalogueScreen(
 
     Column(Modifier.fillMaxSize().background(Black).statusBarsPadding()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            androidx.compose.animation.Crossfade(targetState = backdropStory, animationSpec = tween(800), label = "discover-backdrop") { story ->
-                Box(
-                    Modifier.fillMaxWidth().height(420.dp).graphicsLayer {
-                        alpha = (1f - scrollPx.value / 520f).coerceIn(0f, 1f)
-                        translationY = -scrollPx.value * 0.3f
-                    }
-                ) {
-                    if (story != null) {
-                        SoftBackdrop(story.coverUrl, Modifier.fillMaxSize().graphicsLayer { scaleX = 1.15f; scaleY = 1.15f; alpha = 0.55f })
-                    }
-                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x44070709), 0.55f to Color(0xD0070709), 1f to Black)))
-                }
-            }
+            NoirBackdrop(background, { scrollPx.value }, 420.dp)
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
@@ -1827,8 +1989,16 @@ private fun HomeSectionHeader(eyebrow: String, title: String, action: String? = 
 }
 
 @Composable
-private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?, recentlyRead: List<Series>, saved: List<Series>, progressBySeries: Map<String, Float>, readingHistory: Map<String, ReadingHistoryEntry>, onOpen: (Series) -> Unit, onResume: (Series) -> Unit, onTab: (String) -> Unit) {
-    val featuredStories = catalogue.take(5)
+private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?, recentlyRead: List<Series>, saved: List<Series>, progressBySeries: Map<String, Float>, readingHistory: Map<String, ReadingHistoryEntry>, onOpen: (Series) -> Unit, onResume: (Series) -> Unit, onTab: (String) -> Unit, background: NoirBackground = NoirBackground()) {
+    // A fresh random set of popular manhwa every launch (falls back to anything popular if none are loaded).
+    val manhwaPool = remember(catalogue) {
+        catalogue.filter { item ->
+            SourceRegistry.byId(item.sourceId)?.category?.contains("MANHWA", ignoreCase = true) == true ||
+                item.tags.any { it.equals("manhwa", true) || it.equals("webtoon", true) }
+        }
+    }
+    val heroIsManhwa = manhwaPool.size >= 3
+    val featuredStories = remember(catalogue) { (if (heroIsManhwa) manhwaPool else catalogue).shuffled(java.util.Random(launchSeed)).take(5) }
     val heroPagerState = rememberPagerState(pageCount = { featuredStories.size.coerceAtLeast(1) })
     LaunchedEffect(featuredStories.size) {
         if (featuredStories.size > 1) {
@@ -1861,24 +2031,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            // Immersive backdrop: the featured cover, softly blurred, drifting slower than the content.
-            androidx.compose.animation.Crossfade(targetState = backdropStory, animationSpec = tween(900), label = "home-backdrop") { story ->
-                Box(
-                    Modifier.fillMaxWidth().height(560.dp).graphicsLayer {
-                        alpha = (1f - scrollPx / 720f).coerceIn(0f, 1f)
-                        translationY = -scrollPx * 0.32f
-                    }
-                ) {
-                    if (story != null) {
-                        SoftBackdrop(story.coverUrl, Modifier.fillMaxSize().graphicsLayer { scaleX = 1.15f; scaleY = 1.15f; this.alpha = 0.62f })
-                    }
-                    Box(
-                        Modifier.fillMaxSize().background(
-                            Brush.verticalGradient(0f to Color(0x55070709), 0.5f to Color(0xC8070709), 1f to Black)
-                        )
-                    )
-                }
-            }
+            NoirBackdrop(background, { scrollPx }, 560.dp)
 
             LazyColumn(
                 state = listState,
@@ -1976,7 +2129,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                             ) {
                                 Box(Modifier.size(5.dp).clip(CircleShape).background(Color(0xFFD6C4F1)))
                                 Spacer(Modifier.width(7.dp))
-                                Text("EDITOR'S PICK", color = Color(0xFFEFE8F7), fontSize = 9.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Medium)
+                                Text(if (heroIsManhwa) "POPULAR MANHWA" else "EDITOR'S PICK", color = Color(0xFFEFE8F7), fontSize = 9.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Medium)
                             }
                             Column(
                                 Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(12.dp)
@@ -2609,7 +2762,8 @@ private fun WeeklyActivityChart(activity: List<Int>) {
 }
 
 @Composable
-private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, savedCount: Int, trackedCount: Int, averageProgress: Int, latestTitle: String, activityLabel: String, weeklyActivity: List<Int>, onRadar: () -> Unit, onExportBackup: () -> Unit, onImportBackup: () -> Unit, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit) {
+private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, savedCount: Int, trackedCount: Int, averageProgress: Int, latestTitle: String, activityLabel: String, weeklyActivity: List<Int>, onRadar: () -> Unit, onExportBackup: () -> Unit, onImportBackup: () -> Unit, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit,
+    backgroundLabel: String = "Starry night", onPickBackground: () -> Unit = {}, onResetBackground: () -> Unit = {}) {
     var showMatureConfirmation by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
       Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
@@ -2665,6 +2819,17 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
         Spacer(Modifier.height(22.dp))
         Text("APP SETTINGS", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text("Home & Discover background", color = White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Text(backgroundLabel + "  ·  image, GIF or looping video", color = Muted, fontSize = 10.sp)
+            }
+            Text("Choose", color = Color(0xFFD6C5F2), fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clip(CircleShape).background(Color(0x33FFFFFF)).clickable(onClick = onPickBackground).padding(horizontal = 14.dp, vertical = 8.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Reset", color = Muted, fontSize = 12.sp,
+                modifier = Modifier.clip(CircleShape).clickable(onClick = onResetBackground).padding(horizontal = 10.dp, vertical = 8.dp))
+        }
         SettingSwitch("Intro sound", "Play the short chime when NOIR opens", introSound, onIntroSound)
         SettingSwitch("Launch intro", "Play the NOIR intro every time the app opens", launchIntro, onLaunchIntro)
         SettingSwitch("Mature catalogues (18+)", "Show adult-rated titles from sources that provide them", matureContentEnabled, { enabled -> if (enabled) showMatureConfirmation = true else onMatureContent(false) })
