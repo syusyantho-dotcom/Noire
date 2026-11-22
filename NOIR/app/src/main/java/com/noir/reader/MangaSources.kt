@@ -63,6 +63,8 @@ interface MangaSource {
     suspend fun chapters(series: Series): List<Chapter>
     suspend fun pages(chapter: Chapter): ChapterPages
     suspend fun filterOptions(): SourceFilterOptions = SourceFilterOptions()
+    /** Genres learned while loading a title's details (empty if the source doesn't expose any). */
+    fun cachedTags(series: Series): List<String> = emptyList()
     suspend fun browse(
         query: String, page: Int, sort: String, state: String?, tagKey: String?
     ): List<Series> = if (query.isBlank()) popular(page) else search(query, page)

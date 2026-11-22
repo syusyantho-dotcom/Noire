@@ -26,7 +26,15 @@ android {
     }
     buildTypes {
         getByName("debug") { signingConfig = signingConfigs.getByName("noir") }
+        // Non-debuggable build: ART compiles it with baseline profiles, which is much smoother than a debug APK.
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("noir")
+            isDebuggable = false
+            isMinifyEnabled = false
+            isShrinkResources = false
+        }
     }
+    lint { checkReleaseBuilds = false; abortOnError = false }
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

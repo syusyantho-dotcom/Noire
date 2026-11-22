@@ -79,6 +79,8 @@ private class KotatsuMangaSource(
     override val isBroken: Boolean = parserSource.isBroken
     override val isAdultOnly: Boolean = parserSource.contentType.name.contains("HENTAI", ignoreCase = true)
     @Volatile private var siteOrigin: String? = null
+    private val tagCache = java.util.concurrent.ConcurrentHashMap<String, List<String>>()
+    override fun cachedTags(series: Series): List<String> = tagCache[series.id].orEmpty()
 
     override suspend fun iconUrl(): String? = withContext(Dispatchers.IO) {
         runCatching {
@@ -146,7 +148,9 @@ private class KotatsuMangaSource(
                     sourceId = id,
                     sourceName = name,
                     sourceUrl = manga.url,
-                    sourcePublicUrl = manga.publicUrl
+                    sourcePublicUrl = manga.publicUrl,
+                    tags = manga.tags.map { it.title },
+                    status = manga.state?.name?.lowercase()
                 )
             }
             .toList()
@@ -156,6 +160,7 @@ private class KotatsuMangaSource(
         val parser = host.newParserInstance(parserSource)
         NoirNetwork.originOf(series.sourcePublicUrl)?.let { siteOrigin = it }
         val details = parser.getDetails(series.toParserManga())
+        tagCache[series.id] = details.tags.map { it.title }
         details.chapters.orEmpty().map { item ->
             val number = item.numberString() ?: "?"
             Chapter(
