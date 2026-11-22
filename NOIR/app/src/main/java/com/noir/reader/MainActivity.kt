@@ -384,6 +384,7 @@ private fun NoirApp() {
     }
     var introSound by remember { mutableStateOf(prefs.getBoolean("intro_sound", true)) }
     var launchIntro by remember { mutableStateOf(prefs.getBoolean("launch_intro", true)) }
+    var aetherIntro by remember { mutableStateOf(prefs.getBoolean("intro_aether", true)) }
     var matureContentEnabled by remember { mutableStateOf(prefs.getBoolean("mature_content_18_plus", false)) }
     SideEffect { MatureContentAccess.enabled = matureContentEnabled }
     var showAbout by remember { mutableStateOf(false) }
@@ -1117,7 +1118,8 @@ private fun NoirApp() {
                         { showAbout = true }, { showWhatsNew = true }, { navigateTab(it) },
                         backgroundLabel = when { background.uri == null -> "Starry night (default)"; background.isVideo -> "Custom looping video"; else -> "Custom image / GIF" },
                         onPickBackground = { pickBackground.launch(arrayOf("image/*", "video/*")) },
-                        onResetBackground = { background = NoirBackground(); prefs.edit().remove("bg_uri").remove("bg_video").apply() })
+                        onResetBackground = { background = NoirBackground(); prefs.edit().remove("bg_uri").remove("bg_video").apply() },
+                        aetherIntro = aetherIntro, onAetherIntro = { aetherIntro = it; prefs.edit().putBoolean("intro_aether", it).apply() })
                 }
                 tab == "Home" -> HomeScreen(catalogue, loading, error, recentlyRead.toList(), saved.toList(), seriesProgress.toMap(), readingHistory.toMap(), openSeries, { item -> pendingResumeKey = "${item.sourceId}:${item.id}"; openSeries(item) }, { navigateTab(it) }, background)
                 else -> CatalogueScreen("Discover", query, { query = it }, catalogue, loading, error, hasMoreCatalogue, loadingMoreCatalogue, loadMoreCatalogue, openSeries, discoveryCompactGrid, { discoveryCompactGrid = it }, matureContentEnabled, { navigateTab(it) },
@@ -1136,10 +1138,13 @@ private fun NoirApp() {
                 confirmButton = { TextButton(onClick = { showAbout = false }) { Text("CLOSE", color = Silver) } },
                 containerColor = Panel
             )
-            if (showIntro) IntroOverlay(introSound) {
-                showIntro = false
-                prefs.edit().putBoolean("intro_seen_once", true).apply()
-                if (!prefs.getBoolean("welcome_seen", false)) showWelcome = true
+            if (showIntro) {
+                val finishIntro: () -> Unit = {
+                    showIntro = false
+                    prefs.edit().putBoolean("intro_seen_once", true).apply()
+                    if (!prefs.getBoolean("welcome_seen", false)) showWelcome = true
+                }
+                if (aetherIntro) HorizonIntro(introSound, finishIntro) else IntroOverlay(introSound, finishIntro)
             }
             if (showWelcome && !showIntro) NoirWelcomeWalkthrough(
                 onFinish = {
@@ -2757,7 +2762,8 @@ private fun WeeklyActivityChart(activity: List<Int>) {
 
 @Composable
 private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureContentEnabled: Boolean, savedCount: Int, trackedCount: Int, averageProgress: Int, latestTitle: String, activityLabel: String, weeklyActivity: List<Int>, onRadar: () -> Unit, onExportBackup: () -> Unit, onImportBackup: () -> Unit, onIntroSound: (Boolean) -> Unit, onLaunchIntro: (Boolean) -> Unit, onMatureContent: (Boolean) -> Unit, onAbout: () -> Unit, onWhatsNew: () -> Unit, onTab: (String) -> Unit,
-    backgroundLabel: String = "Starry night", onPickBackground: () -> Unit = {}, onResetBackground: () -> Unit = {}) {
+    backgroundLabel: String = "Starry night", onPickBackground: () -> Unit = {}, onResetBackground: () -> Unit = {},
+    aetherIntro: Boolean = true, onAetherIntro: (Boolean) -> Unit = {}) {
     var showMatureConfirmation by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
       Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
@@ -2826,6 +2832,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
         }
         SettingSwitch("Intro sound", "Play the short chime when NOIR opens", introSound, onIntroSound)
         SettingSwitch("Launch intro", "Play the NOIR intro every time the app opens", launchIntro, onLaunchIntro)
+        SettingSwitch("Horizon intro", "Earth-rise intro with the NOIR crew (off = glow sheet intro)", aetherIntro, onAetherIntro)
         SettingSwitch("Mature catalogues (18+)", "Show adult-rated titles from sources that provide them", matureContentEnabled, { enabled -> if (enabled) showMatureConfirmation = true else onMatureContent(false) })
         Spacer(Modifier.height(22.dp))
         Text("BACKUP & RESTORE", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
@@ -3417,17 +3424,30 @@ private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, cont
     var panY by remember(pageUrl) { mutableFloatStateOf(0f) }
     val context = LocalContext.current
     var ratio by remember(pageUrl) { mutableStateOf(PageAspectCache.get(pageUrl)) }
-    val model: Any = if (reserveHeight) {
-        remember(pageUrl) { readerPageRequest(context, pageUrl, context.resources.displayMetrics.widthPixels) }
-    } else pageUrl
+    var attempt by remember(pageUrl) { mutableIntStateOf(0) }
+    var failure by remember(pageUrl) { mutableStateOf<String?>(null) }
+    // Attempt 0 is the fast sized request; later attempts use a plain, software-decoded request as a fallback.
+    val model: Any = remember(pageUrl, attempt) {
+        if (attempt == 0) {
+            if (reserveHeight) readerPageRequest(context, pageUrl, context.resources.displayMetrics.widthPixels) else pageUrl
+        } else {
+            ImageRequest.Builder(context).data(pageUrl).allowHardware(false).setParameter("noir_attempt", attempt).build()
+        }
+    }
+    Box {
     AsyncImage(model = model, contentDescription = "Comic page", contentScale = contentScale,
         onSuccess = { state ->
+            failure = null
             val drawable = state.result.drawable
             if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
                 val measured = drawable.intrinsicWidth.toFloat() / drawable.intrinsicHeight
                 PageAspectCache.put(pageUrl, measured)
                 ratio = measured
             }
+        },
+        onError = { state ->
+            if (attempt == 0) attempt = 1
+            else failure = state.result.throwable.message?.take(110) ?: "Unknown error"
         },
         modifier = modifier
             .then(
@@ -3453,6 +3473,21 @@ private fun ReaderPageImage(pageUrl: String, modifier: Modifier = Modifier, cont
                     else zoom = 2.25f
                 }
             ))
+    if (failure != null) {
+        Column(
+            Modifier.matchParentSize().background(Color(0xFF14111A)).clickable { failure = null; attempt += 1 }.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+        ) {
+            NoirMascot(NoirMascotKind.SIT, 84.dp)
+            Spacer(Modifier.height(10.dp))
+            Text("This page couldn't load", color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            Text(failure.orEmpty(), color = Muted, fontSize = 11.sp, lineHeight = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Spacer(Modifier.height(12.dp))
+            Text("TAP TO RETRY", color = Color(0xFFD6C5F2), fontSize = 10.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+    }
 }
 
 @Composable
@@ -3785,6 +3820,12 @@ private fun SourcesScreen(
         pinned.forEach { stored.put(it) }
         sourcePrefs.edit().putString("pinned_sources", stored.toString()).apply()
     }
+    var verifiedOk by remember {
+        mutableStateOf<Set<String>>(runCatching<Set<String>> {
+            val stored = JSONArray(sourcePrefs.getString("verified_ok", "[]"))
+            (0 until stored.length()).map { stored.optString(it) }.toSet()
+        }.getOrDefault(emptySet()))
+    }
     var selectedFilter by remember { mutableStateOf("All") }
     var selectedCategory by remember { mutableStateOf("All") }
     var sourceQuery by remember { mutableStateOf("") }
@@ -3826,6 +3867,22 @@ private fun SourcesScreen(
             }
         }
     } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { "ERROR" }
+
+    suspend fun checkAndRecord(entry: MangaSource) {
+        sourceChecks[entry.id] = "CHECKING"
+        val result = runCheck(entry)
+        sourceChecks[entry.id] = result
+        verifiedOk = if (result == "ONLINE") verifiedOk + entry.id else verifiedOk - entry.id
+        val stored = JSONArray()
+        verifiedOk.forEach { stored.put(it) }
+        sourcePrefs.edit().putString("verified_ok", stored.toString()).apply()
+    }
+    val recommended = remember(selectedCategory, entries, verifiedOk, pinned) {
+        if (selectedCategory == "All") emptyList() else entries
+            .filter { it.category.equals(selectedCategory, ignoreCase = true) && !it.isBroken }
+            .sortedWith(compareBy<MangaSource>({ if (it.id in verifiedOk) 0 else 1 }, { if (it.id in pinned) 0 else 1 }, { it.name.lowercase() }))
+            .take(4)
+    }
 
     Column(Modifier.fillMaxSize().background(Black).statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 10.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -3895,12 +3952,75 @@ private fun SourcesScreen(
                                         entries.filter { it.id in enabledSourceIds && !it.isBroken }.map { entry ->
                                             async {
                                                 gate.acquire()
-                                                try { sourceChecks[entry.id] = "CHECKING"; sourceChecks[entry.id] = runCheck(entry) } finally { gate.release() }
+                                                try { checkAndRecord(entry) } finally { gate.release() }
                                             }
                                         }.awaitAll()
                                     }
                                 }
                             })
+                        }
+                    }
+                }
+            }
+            if (selectedCategory != "All") {
+                item(key = "guide-$selectedCategory") {
+                    val kind = selectedCategory.uppercase()
+                    val title = selectedCategory.lowercase().replaceFirstChar { it.uppercase() }
+                    val blurb = when {
+                        kind.contains("MANHWA") -> "Korean webcomics, made to be read as one long vertical scroll. They update often and are usually in colour. Choose sources that load full chapters and sharp images, and keep two or three on so a missing chapter on one can be found on another."
+                        kind.contains("MANHUA") -> "Chinese comics, also built for vertical scrolling and often long-running cultivation, fantasy and romance series. Pick a source with regular updates, and keep one backup enabled because chapter coverage differs between sites."
+                        kind.contains("MANGA") -> "Japanese comics, usually read page by page, right to left. MangaDex-style sources tend to carry the widest, cleanest catalogue with community translations. Keep one main source and one fallback."
+                        kind.contains("COMIC") -> "Western comics and graphic novels, normally read left to right, page by page. Fewer sources cover these, so enable a couple and test them."
+                        kind.contains("NOVEL") -> "Text-based stories rather than images. Catalogue coverage varies, so test a source before relying on it."
+                        else -> "A mixed group of sources. Test each one to see whether titles, chapters, pages and images all load before you rely on it."
+                    }
+                    Column(
+                        Modifier.fillMaxWidth().noirGlass(RoundedCornerShape(24.dp), 0.9f).padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            NoirMascot(NoirMascotKind.STAR, 48.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text("GUIDE", color = Color(0xFFD6C5F2), fontSize = 9.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
+                                Text("Recommended for $title", color = White, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = (-.3).sp)
+                            }
+                        }
+                        Text(blurb, color = Color(0xFFC5BFCC), fontSize = 13.sp, lineHeight = 19.sp)
+                        if (recommended.isEmpty()) {
+                            Text("No working sources of this type are available right now.", color = Muted, fontSize = 12.sp)
+                        } else {
+                            Text(
+                                if (recommended.any { it.id in verifiedOk }) "Tested and working sources come first:" else "Start with these, then tap Test source on each:",
+                                color = Color(0xFFD6C5F2), fontSize = 12.sp, fontWeight = FontWeight.Medium
+                            )
+                            recommended.forEach { entry ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(7.dp).clip(CircleShape).background(if (entry.id in verifiedOk) Color(0xFF9FCB9A) else Color(0xFF77717D)))
+                                    Spacer(Modifier.width(9.dp))
+                                    Text(entry.name, color = White, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(if (entry.id in verifiedOk) "Verified" else "Not tested", color = if (entry.id in verifiedOk) Color(0xFF9FCB9A) else Muted, fontSize = 11.sp)
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Box(
+                                    Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(Color(0xFFF1EDF6))
+                                        .clickable { recommended.filter { it.id !in enabledSourceIds }.forEach { onToggleEnabled(it.id) } }.padding(vertical = 12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) { Text("Enable these", color = Color(0xFF17131D), fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+                                Box(
+                                    Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(Color(0xFF2A2531))
+                                        .clickable {
+                                            sourceScope.launch {
+                                                val gate = kotlinx.coroutines.sync.Semaphore(2)
+                                                coroutineScope {
+                                                    recommended.map { entry -> async { gate.acquire(); try { checkAndRecord(entry) } finally { gate.release() } } }.awaitAll()
+                                                }
+                                            }
+                                        }.padding(vertical = 12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) { Text("Test these", color = White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+                            }
                         }
                     }
                 }
@@ -3969,8 +4089,7 @@ private fun SourcesScreen(
                             Box(
                                 Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(Color(0xFF2A2531))
                                     .clickable(enabled = check != "CHECKING" && !entry.isBroken) {
-                                        sourceChecks[entry.id] = "CHECKING"
-                                        sourceScope.launch { sourceChecks[entry.id] = runCheck(entry) }
+                                        sourceScope.launch { checkAndRecord(entry) }
                                     }.padding(vertical = 13.dp),
                                 contentAlignment = Alignment.Center
                             ) { Text(if (check == "CHECKING") "Testing…" else "Test source", color = White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
@@ -5002,6 +5121,221 @@ private fun NoirLogoMark(
         modifier = modifier.size(size),
         contentScale = ContentScale.Fit
     )
+}
+
+private class CityLight(val u: Float, val v: Float, val size: Float, val tint: Color, val phase: Float)
+
+private fun startIntroSound(context: Context, playSound: Boolean): MediaPlayer? {
+    return runCatching {
+        val appContext = context.applicationContext
+        val audio = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (!playSound || audio.getStreamVolume(AudioManager.STREAM_MUSIC) <= 0) return null
+        val mp = MediaPlayer.create(appContext, R.raw.noir_intro) ?: return null
+        mp.setVolume(0.85f, 0.85f)
+        mp.start()
+        mp
+    }.getOrNull()
+}
+
+/** "Aether"-style launch: a quiet night sky, an Earth horizon rising with city lights, a sparkle and the NOIR script. */
+@Composable
+private fun HorizonIntro(playSound: Boolean, onFinished: () -> Unit) {
+    val context = LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val overall = remember { Animatable(0f) }
+    val rise = remember { Animatable(0f) }
+    val sparkle = remember { Animatable(0f) }
+    val flash = remember { Animatable(0f) }
+    val word = remember { Animatable(0f) }
+    val tag = remember { Animatable(0f) }
+    val exit = remember { Animatable(0f) }
+    val pops = remember { List(5) { Animatable(0f) } }
+    val loop = rememberInfiniteTransition(label = "horizon-loop")
+    val phase = loop.animateFloat(0f, 1f, infiniteRepeatable(tween(5000, easing = LinearEasing)), label = "horizon-phase")
+    val stars = remember {
+        val r = java.util.Random(21)
+        List(90) { StarSpec(r.nextFloat(), r.nextFloat() * 0.78f, 0.5f + r.nextFloat() * 1.1f, r.nextFloat(), 5 + r.nextInt(10), 0, Color.White) }
+    }
+    val cities = remember {
+        val r = java.util.Random(5)
+        val tints = listOf(Color(0xFFFFE9B0), Color(0xFFFFD27A), Color(0xFFBFD8FF), Color.White, Color(0xFFFFF4D6))
+        List(620) {
+            val cluster = r.nextInt(5)
+            val centers = floatArrayOf(0.18f, 0.40f, 0.58f, 0.78f, 0.92f)
+            val u = (centers[cluster] + (r.nextGaussian().toFloat() * 0.11f)).coerceIn(-0.1f, 1.1f)
+            val depth = r.nextFloat()
+            CityLight(u, depth * depth, 0.5f + r.nextFloat() * 1.1f, tints[r.nextInt(tints.size)], r.nextFloat())
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        var player: MediaPlayer? = null
+        try {
+            player = startIntroSound(context, playSound)
+            kotlinx.coroutines.coroutineScope {
+                launch { overall.animateTo(1f, tween(400)) }
+                launch { rise.animateTo(1f, tween(1500, easing = CubicBezierEasing(0.2f, 0.7f, 0.2f, 1f))) }
+                launch { delay(1250) }
+            }
+            runCatching { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
+            kotlinx.coroutines.coroutineScope {
+                launch { flash.animateTo(1f, tween(80)); flash.animateTo(0f, tween(700)) }
+                launch { sparkle.animateTo(1f, spring(dampingRatio = 0.45f, stiffness = 170f)) }
+                launch { delay(160); word.animateTo(1f, tween(1100, easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f))) }
+                launch { delay(700); tag.animateTo(1f, tween(800)) }
+                pops.forEachIndexed { i, a -> launch { delay(420L + i * 140L); a.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 240f)) } }
+            }
+            delay(1000)
+            kotlinx.coroutines.coroutineScope {
+                launch { exit.animateTo(1f, tween(650, easing = FastOutSlowInEasing)) }
+                launch { overall.animateTo(0f, tween(650)) }
+            }
+        } catch (_: Exception) {
+        } finally {
+            player?.let { mp ->
+                runCatching { if (mp.isPlaying) mp.stop() }
+                runCatching { mp.release() }
+            }
+            onFinished()
+        }
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF010102)).graphicsLayer { alpha = overall.value }) {
+        val wPx = with(density) { maxWidth.toPx() }
+        val hPx = with(density) { maxHeight.toPx() }
+        val radius = wPx * 1.9f
+        // Where the planet's edge sits, as it rises into place.
+        fun limbTop(): Float = hPx * (0.80f + 0.24f * (1f - rise.value))
+        fun limbAt(x: Float): Float {
+            val dx = x - wPx / 2f
+            return limbTop() + radius - kotlin.math.sqrt((radius * radius - dx * dx).coerceAtLeast(0f))
+        }
+
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            val tau = 2f * Math.PI.toFloat()
+            val time = phase.value
+            val top = limbTop()
+            val cx = w / 2f
+            val cy = top + radius
+            stars.forEach { s ->
+                val tw = 0.5f + 0.5f * kotlin.math.sin((time * s.twinkle + s.phase) * tau)
+                drawCircle(Color.White.copy(alpha = (0.12f + 0.6f * tw) * rise.value), radius = s.size.dp.toPx() * 0.6f, center = Offset(s.x * w, s.y * h))
+            }
+            // Atmosphere glow above the limb.
+            val glowR = radius * 1.07f
+            drawCircle(
+                Brush.radialGradient(
+                    colorStops = arrayOf(0f to Color.Transparent, 0.90f to Color.Transparent, 0.935f to Color(0xFFBFD6FF).copy(alpha = 0.55f), 0.965f to Color(0xFF6F8CFF).copy(alpha = 0.16f), 1f to Color.Transparent),
+                    center = Offset(cx, cy), radius = glowR
+                ), radius = glowR, center = Offset(cx, cy), alpha = rise.value
+            )
+            // Sun-lit glint toward the right.
+            val gx = w * 0.80f
+            drawCircle(
+                Brush.radialGradient(listOf(Color.White.copy(alpha = 0.55f), Color(0xFF9DB8FF).copy(alpha = 0.22f), Color.Transparent), center = Offset(gx, limbAt(gx)), radius = w * 0.42f),
+                radius = w * 0.42f, center = Offset(gx, limbAt(gx)), alpha = rise.value
+            )
+            drawCircle(Color(0xFF020308), radius = radius, center = Offset(cx, cy))
+            // Bright rim, strongest at the glint and fading toward the left.
+            val rimBrush = Brush.horizontalGradient(0f to Color(0x11FFFFFF), 0.45f to Color(0x77DCE6FF), 0.8f to Color.White, 1f to Color(0xDDFFFFFF))
+            listOf(34f to 0.07f, 16f to 0.14f, 7f to 0.28f, 2.2f to 0.95f).forEach { (wd, a) ->
+                drawCircle(rimBrush, radius = radius, center = Offset(cx, cy), alpha = a * rise.value, style = Stroke(wd.dp.toPx()))
+            }
+            // City lights.
+            cities.forEach { c ->
+                val x = c.u * w
+                val curve = cy - kotlin.math.sqrt((radius * radius - (x - cx) * (x - cx)).coerceAtLeast(0f))
+                val y = curve + 3.dp.toPx() + c.v * (h - curve - 3.dp.toPx())
+                if (y < h) {
+                    val tw = 0.75f + 0.25f * kotlin.math.sin((time * 3f + c.phase) * tau)
+                    val nearRim = 1f - c.v * 0.6f
+                    drawCircle(c.tint.copy(alpha = (0.35f + 0.55f * nearRim) * tw * rise.value), radius = c.size.dp.toPx() * 0.55f, center = Offset(x, y))
+                }
+            }
+            if (flash.value > 0.001f) drawRect(Color.White, alpha = 0.12f * flash.value)
+            // The sparkle.
+            val sp = sparkle.value
+            if (sp > 0.01f) {
+                val c = Offset(cx, h * 0.385f)
+                val s = 24.dp.toPx() * sp * (0.92f + 0.08f * kotlin.math.sin(time * tau * 2f))
+                drawCircle(Brush.radialGradient(listOf(Color(0xFFDCE6FF).copy(alpha = 0.35f * sp.coerceAtMost(1f)), Color.Transparent), center = c, radius = s * 3.2f), radius = s * 3.2f, center = c)
+                val path = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(c.x, c.y - s)
+                    quadraticBezierTo(c.x + 0.07f * s, c.y - 0.07f * s, c.x + s * 0.9f, c.y)
+                    quadraticBezierTo(c.x + 0.07f * s, c.y + 0.07f * s, c.x, c.y + s)
+                    quadraticBezierTo(c.x - 0.07f * s, c.y + 0.07f * s, c.x - s * 0.9f, c.y)
+                    quadraticBezierTo(c.x - 0.07f * s, c.y - 0.07f * s, c.x, c.y - s)
+                    close()
+                }
+                drawPath(path, Color.White.copy(alpha = sp.coerceAtMost(1f)))
+            }
+        }
+
+        Column(
+            Modifier.fillMaxWidth().offset { IntOffset(0, (hPx * 0.43f).roundToInt()) },
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "NOIR",
+                modifier = Modifier.graphicsLayer {
+                    alpha = word.value
+                    translationY = (1f - word.value) * 14.dp.toPx()
+                    val sc = 0.96f + 0.04f * word.value
+                    scaleX = sc
+                    scaleY = sc
+                },
+                style = androidx.compose.ui.text.TextStyle(
+                    brush = Brush.horizontalGradient(listOf(Color(0xFF9E98AE), Color.White, Color(0xFFB9B2C8))),
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                    fontWeight = FontWeight.Light,
+                    fontSize = 52.sp,
+                    letterSpacing = 6.sp
+                )
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "A UNIVERSE BETWEEN THE PAGES", color = Color(0xFFB5ABCB), fontSize = 8.sp, letterSpacing = 2.6.sp,
+                modifier = Modifier.graphicsLayer { alpha = tag.value; translationY = (1f - tag.value) * 8.dp.toPx() }
+            )
+        }
+
+        // The crew sits along the horizon.
+        val crew = remember {
+            listOf(
+                Triple(NoirMascotKind.SIT, 0.03f, 66f to 381f / 420f),
+                Triple(NoirMascotKind.STAR, 0.22f, 70f to 348f / 420f),
+                Triple(NoirMascotKind.SLEEP, 0.40f, 92f to 304f / 420f),
+                Triple(NoirMascotKind.PEEK, 0.63f, 74f to 223f / 420f),
+                Triple(NoirMascotKind.SCARF, 0.82f, 58f to 420f / 384f)
+            )
+        }
+        crew.forEachIndexed { i, (kind, xf, size) ->
+            val widthDp = size.first
+            val heightDp = widthDp * size.second
+            Image(
+                painter = painterResource(kind.res), contentDescription = null, contentScale = ContentScale.Fit,
+                modifier = Modifier.width(widthDp.dp)
+                    .offset {
+                        val x = wPx * xf
+                        val groundY = limbAt(x + widthDp.dp.toPx() / 2f) + 3.dp.toPx()
+                        val bob = kotlin.math.sin(phase.value * 2f * Math.PI.toFloat() + i * 1.4f) * 1.5.dp.toPx()
+                        IntOffset(x.roundToInt(), (groundY - heightDp.dp.toPx() + bob + exit.value * hPx * 0.1f).roundToInt())
+                    }
+                    .graphicsLayer {
+                        val p = pops[i].value
+                        alpha = p.coerceIn(0f, 1f)
+                        val sc = 0.5f + 0.5f * p
+                        scaleX = sc
+                        scaleY = sc
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                    }
+            )
+        }
+    }
 }
 
 private fun introPalette(t: Float): Color {
