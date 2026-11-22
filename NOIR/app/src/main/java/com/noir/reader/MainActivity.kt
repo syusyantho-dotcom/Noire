@@ -98,6 +98,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate as rotateDraw
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
@@ -3716,7 +3717,7 @@ private fun ReaderScreen(
                     Box(
                         Modifier.fillMaxSize().clipToBounds()
                             .pointerInput(Unit) {
-                                androidx.compose.foundation.gestures.awaitEachGesture {
+                                awaitEachGesture {
                                     awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
                                     do {
                                         val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
