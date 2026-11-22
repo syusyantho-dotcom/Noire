@@ -3759,7 +3759,8 @@ private fun ReaderScreen(
             }
         },
         confirmButton = { TextButton(onClick = { showSettings = false }) { Text("DONE", color = Color(0xFFD6C5F2)) } })
-}@Composable
+}@OptIn(ExperimentalFoundationApi::class)
+@Composable
 private fun SourcesScreen(
     enabledSourceIds: Set<String>,
     onToggleEnabled: (String) -> Unit,
@@ -3787,209 +3788,210 @@ private fun SourcesScreen(
     var selectedFilter by remember { mutableStateOf("All") }
     var selectedCategory by remember { mutableStateOf("All") }
     var sourceQuery by remember { mutableStateOf("") }
+    var expandedId by remember { mutableStateOf<String?>(null) }
     val sourceChecks = remember { mutableStateMapOf<String, String>() }
     val sourceScope = rememberCoroutineScope()
 
     val entries = remember {
         SourceRegistry.sources.filter { MatureContentAccess.enabled || !it.isAdultOnly }.sortedWith(
-            compareBy<MangaSource> { it.isBroken }
-                .thenBy { it.name.lowercase() }
+            compareBy<MangaSource> { it.isBroken }.thenBy { it.name.lowercase() }
         )
     }
-    val categories = listOf("All") + entries.map { it.category }.filter { it.isNotBlank() }.distinct().sorted()
-    val filtered = entries.filter { entry ->
-        val matchesQuery = entry.name.contains(sourceQuery, ignoreCase = true) ||
-            entry.id.contains(sourceQuery, ignoreCase = true) ||
-            entry.language.contains(sourceQuery, ignoreCase = true) ||
-            entry.category.contains(sourceQuery, ignoreCase = true)
-        matchesQuery && (selectedCategory == "All" || entry.category.equals(selectedCategory, ignoreCase = true)) && when (selectedFilter) {
-            "Enabled" -> entry.id in enabledSourceIds
-            "Pinned" -> entry.id in pinned
-            else -> true
-        }
-    }.sortedWith(compareBy<MangaSource> { it.isBroken }.thenBy { if (it.id in pinned) 0 else 1 }.thenBy { it.name.lowercase() })
+    val categories = remember(entries) { listOf("All") + entries.map { it.category }.filter { it.isNotBlank() }.distinct().sorted() }
+    val filtered = remember(entries, sourceQuery, selectedCategory, selectedFilter, enabledSourceIds, pinned) {
+        entries.filter { entry ->
+            val matchesQuery = sourceQuery.isBlank() || entry.name.contains(sourceQuery, ignoreCase = true) ||
+                entry.id.contains(sourceQuery, ignoreCase = true) ||
+                entry.language.contains(sourceQuery, ignoreCase = true) ||
+                entry.category.contains(sourceQuery, ignoreCase = true)
+            matchesQuery && (selectedCategory == "All" || entry.category.equals(selectedCategory, ignoreCase = true)) && when (selectedFilter) {
+                "Enabled" -> entry.id in enabledSourceIds
+                "Pinned" -> entry.id in pinned
+                else -> true
+            }
+        }.sortedWith(compareBy<MangaSource> { it.isBroken }.thenBy { if (it.id in pinned) 0 else 1 }.thenBy { it.name.lowercase() })
+    }
     val enabledCount = enabledSourceIds.count { id -> entries.any { it.id == id } }
+    val shownEditable = filtered.filter { !it.isBroken }
+
+    suspend fun runCheck(entry: MangaSource): String = try {
+        // Full chain: titles -> chapters -> pages -> a real image fetch.
+        val titles = entry.popular(0)
+        if (titles.isEmpty()) "EMPTY" else {
+            val chapterList = entry.chapters(titles.first())
+            if (chapterList.isEmpty()) "NO_CHAPTERS" else {
+                val pageList = entry.pages(chapterList.first()).pages
+                if (pageList.isEmpty()) "NO_PAGES"
+                else if (NoirNetwork.probeImage(pageList.first())) "ONLINE" else "IMAGES_BLOCKED"
+            }
+        }
+    } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { "ERROR" }
 
     Column(Modifier.fillMaxSize().background(Black).statusBarsPadding()) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = 12.dp, end = 20.dp, top = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { onTab("Profile") }) {
-                Icon(Icons.Rounded.ArrowBack, null, tint = White)
-            }
+        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 10.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { onTab("Profile") }) { Icon(Icons.Rounded.ArrowBack, "Back", tint = White) }
             Column(Modifier.weight(1f)) {
-                Text("NOIR  /  DISCOVER", color = Muted, fontSize = 9.sp, letterSpacing = 2.sp)
-                Text("Source library", color = White, fontSize = 27.sp, fontWeight = FontWeight.SemiBold)
+                Text("NOIR  /  SETTINGS", color = Muted, fontSize = 9.sp, letterSpacing = 2.sp)
+                Text("Manage sources", color = White, fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-.5).sp)
             }
-            Icon(Icons.Rounded.Tune, null, tint = Silver, modifier = Modifier.size(21.dp))
         }
-        Column(Modifier.padding(horizontal = 20.dp)) {
-            Spacer(Modifier.height(14.dp))
-            Box(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFF30263B), Color(0xFF17151D), Color(0xFF101012))))
-                    .border(1.dp, Color(0xFF51445E), RoundedCornerShape(24.dp))
-                    .padding(19.dp)
-            ) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(38.dp).clip(RoundedCornerShape(13.dp)).background(Color(0xFF51405F)), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.Explore, null, tint = Color(0xFFF0E7F7), modifier = Modifier.size(21.dp))
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        Text("KOTATSU COMMUNITY NETWORK", color = Color(0xFFE2D6EA), fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.weight(1f))
-                        Text("${enabledCount.toString().padStart(2, '0')} ENABLED", color = Color(0xFFB9D3B1), fontSize = 8.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.height(17.dp))
-                    Text("Read beyond\nthe boundaries.", color = White, fontSize = 25.sp, lineHeight = 29.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(7.dp))
-                    Text(
-                        "Browse ${entries.size} community source parsers. Enable only the catalogues you want NOIR to search.",
-                        color = Color(0xFFB7B0BE), fontSize = 11.sp, lineHeight = 17.sp
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Row(
-                        Modifier.clip(RoundedCornerShape(12.dp)).background(Color(0xFFEEE7F2))
-                            .clickable { onTab("Discover") }.padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Browse enabled sources", color = Color(0xFF17121C), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.width(7.dp))
-                        Icon(Icons.Rounded.ArrowForward, null, tint = Color(0xFF17121C), modifier = Modifier.size(14.dp))
-                    }
-                }
-            }
-            Spacer(Modifier.height(20.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("COMMUNITY SOURCES", color = Silver, fontSize = 9.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                Text("${entries.size} PARSERS", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
-            }
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = sourceQuery,
-                onValueChange = { sourceQuery = it },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                placeholder = { Text("Find a source or language…", color = Muted, fontSize = 12.sp) },
-                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = Muted) },
-                shape = RoundedCornerShape(15.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = White, unfocusedTextColor = White,
-                    focusedBorderColor = Color(0xFF786487), unfocusedBorderColor = Color(0xFF343039),
-                    cursorColor = White, focusedContainerColor = Panel, unfocusedContainerColor = Panel
-                )
-            )
-            Spacer(Modifier.height(11.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("All", "Enabled", "Pinned").forEach { filter ->
-                    val active = selectedFilter == filter
-                    Box(
-                        Modifier.clip(RoundedCornerShape(50)).background(if (active) Color(0xFFE8DDEC) else Panel)
-                            .clickable { selectedFilter = filter }
-                            .padding(horizontal = 15.dp, vertical = 8.dp)
-                    ) {
-                        Text(filter, color = if (active) Color(0xFF211927) else Silver, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                items(categories) { category ->
-                    val active = selectedCategory == category
-                    Box(Modifier.clip(RoundedCornerShape(50)).background(if (active) Color(0xFF3A3044) else Color(0xFF17161B))
-                        .border(1.dp, if (active) Color(0xFF806D91) else Color(0xFF302C35), RoundedCornerShape(50))
-                        .clickable { selectedCategory = category }.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                        Text(category.uppercase(), color = if (active) Color(0xFFEDE3F4) else Muted, fontSize = 8.sp, letterSpacing = .7.sp)
-                    }
-                }
-            }
-            Spacer(Modifier.height(13.dp))
-        }
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+        LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(start = 15.dp, end = 15.dp, top = 2.dp, bottom = 18.dp),
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-            verticalArrangement = Arrangement.spacedBy(13.dp)
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            item(key = "summary") {
+                Row(
+                    Modifier.fillMaxWidth().noirGlass(RoundedCornerShape(22.dp), 0.8f).padding(horizontal = 6.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    listOf("ENABLED" to enabledCount, "PINNED" to pinned.count { id -> entries.any { it.id == id } }, "AVAILABLE" to entries.size).forEach { (label, value) ->
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(value.toString(), color = White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                            Text(label, color = Color(0xFFB9AECB), fontSize = 9.sp, letterSpacing = 1.4.sp)
+                        }
+                    }
+                }
+            }
+            item(key = "hint") {
+                Text(
+                    "Turn on the catalogues you want NOIR to search. Tap a source for tests and its catalogue. Pinned sources stay at the top.",
+                    color = Muted, fontSize = 12.sp, lineHeight = 18.sp, modifier = Modifier.padding(horizontal = 4.dp)
+                )
+            }
+            stickyHeader(key = "controls") {
+                Column(Modifier.fillMaxWidth().background(Color(0xF2050507)).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    OutlinedTextField(
+                        value = sourceQuery, onValueChange = { sourceQuery = it },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        placeholder = { Text("Search by name, language or type…", color = Muted, fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Rounded.Search, null, tint = Muted) },
+                        trailingIcon = { if (sourceQuery.isNotEmpty()) IconButton(onClick = { sourceQuery = "" }) { Icon(Icons.Rounded.Close, "Clear", tint = Silver) } },
+                        shape = RoundedCornerShape(18.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = White, unfocusedTextColor = White,
+                            focusedBorderColor = Color(0xFF9A82C2), unfocusedBorderColor = Color(0x33FFFFFF),
+                            cursorColor = White, focusedContainerColor = Panel, unfocusedContainerColor = Panel
+                        )
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        listOf("All", "Enabled", "Pinned").forEach { filter -> NoirChip(filter, selectedFilter == filter, { selectedFilter = filter }) }
+                        Spacer(Modifier.weight(1f))
+                        Text("${filtered.size} shown", color = Muted, fontSize = 11.sp)
+                    }
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(categories, key = { it }) { category ->
+                            NoirChip(if (category == "All") "All types" else category.lowercase().replaceFirstChar { it.uppercase() }, selectedCategory == category, { selectedCategory = category })
+                        }
+                    }
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item { NoirChip("Enable all shown", false, { shownEditable.filter { it.id !in enabledSourceIds }.forEach { onToggleEnabled(it.id) } }) }
+                        item { NoirChip("Disable all shown", false, { shownEditable.filter { it.id in enabledSourceIds }.forEach { onToggleEnabled(it.id) } }) }
+                        item {
+                            NoirChip("Test enabled", false, {
+                                sourceScope.launch {
+                                    val gate = kotlinx.coroutines.sync.Semaphore(3)
+                                    coroutineScope {
+                                        entries.filter { it.id in enabledSourceIds && !it.isBroken }.map { entry ->
+                                            async {
+                                                gate.acquire()
+                                                try { sourceChecks[entry.id] = "CHECKING"; sourceChecks[entry.id] = runCheck(entry) } finally { gate.release() }
+                                            }
+                                        }.awaitAll()
+                                    }
+                                }
+                            })
+                        }
+                    }
+                }
+            }
+            if (filtered.isEmpty()) {
+                item(key = "none") { EmptyState("No sources match", "Try a different search or clear the filters.") }
+            }
             items(filtered, key = { it.id }) { entry ->
                 val active = entry.id in enabledSourceIds
                 val isPinned = entry.id in pinned
                 val check = sourceChecks[entry.id]
+                val expanded = expandedId == entry.id
+                val bad = entry.isBroken || check in setOf("ERROR", "NO_CHAPTERS", "NO_PAGES", "IMAGES_BLOCKED", "EMPTY")
+                val dot = when { bad -> Color(0xFFE0A0A0); check == "ONLINE" -> Color(0xFF9FCB9A); check == "CHECKING" -> Color(0xFFE3C98B); active -> Color(0xFF9FC29A); else -> Color(0xFF77717D) }
+                val shortStatus = when {
+                    entry.isBroken -> "Flagged as unavailable"
+                    check == "CHECKING" -> "Checking…"
+                    check == "ONLINE" -> "Verified working"
+                    check != null && bad -> "Problem found"
+                    active -> "Enabled"
+                    else -> "Off"
+                }
+                val detailStatus = when {
+                    entry.isBroken -> "Flagged by the parser library"
+                    check == "CHECKING" -> "Testing titles, chapters, pages and images…"
+                    check == "ONLINE" -> "Titles, chapters, pages and images all loaded"
+                    check == "EMPTY" -> "The source returned no titles"
+                    check == "NO_CHAPTERS" -> "Titles load, but no chapters were found"
+                    check == "NO_PAGES" -> "Chapters load, but no pages were found"
+                    check == "IMAGES_BLOCKED" -> "Pages load, but the images were blocked"
+                    check == "ERROR" -> "Connection failed"
+                    else -> "Not tested yet"
+                }
                 Column(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                        .background(Brush.linearGradient(listOf(Color(0xFF201C26), Color(0xFF111014))))
-                        .border(1.dp, if (active) Color(0xFF62516F) else Color(0xFF302C35), RoundedCornerShape(18.dp))
-                        .padding(11.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    Modifier.fillMaxWidth().animateContentSize(tween(220))
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(Brush.linearGradient(listOf(Color(0xFF1E1A25), Color(0xFF111014))))
+                        .border(1.dp, if (active) Color(0xFF6A5780) else Color(0xFF2E2A34), RoundedCornerShape(22.dp))
+                        .clickable { expandedId = if (expanded) null else entry.id }
+                        .padding(14.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        SourceIcon(entry, Modifier.size(44.dp))
-                        Spacer(Modifier.width(9.dp))
+                        SourceIcon(entry, Modifier.size(48.dp))
+                        Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(entry.name, color = White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("${entry.category} · ${entry.language.uppercase()}", color = Muted, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(entry.name, color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(2.dp))
+                            Text("${entry.category.lowercase().replaceFirstChar { it.uppercase() }} · ${entry.language.uppercase()}", color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(5.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
+                                Spacer(Modifier.width(6.dp))
+                                Text(shortStatus, color = if (bad) Color(0xFFE0A0A0) else Color(0xFFBDB6C4), fontSize = 11.sp)
+                            }
                         }
-                        IconButton(onClick = { pinned = if (isPinned) pinned - entry.id else pinned + entry.id }, modifier = Modifier.size(30.dp)) {
-                            Icon(Icons.Rounded.PushPin, if (isPinned) "Unpin source" else "Pin source",
-                                tint = if (isPinned) Color(0xFFD9C4E9) else Muted, modifier = Modifier.size(16.dp))
+                        IconButton(onClick = { pinned = if (isPinned) pinned - entry.id else pinned + entry.id }, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Rounded.PushPin, if (isPinned) "Unpin source" else "Pin source", tint = if (isPinned) Color(0xFFD9C4E9) else Muted, modifier = Modifier.size(20.dp))
+                        }
+                        Switch(checked = active, onCheckedChange = { onToggleEnabled(entry.id) }, enabled = !entry.isBroken)
+                    }
+                    if (expanded) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(detailStatus, color = Color(0xFFB9B2C0), fontSize = 12.sp, lineHeight = 17.sp)
+                        Spacer(Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(
+                                Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(Color(0xFF2A2531))
+                                    .clickable(enabled = check != "CHECKING" && !entry.isBroken) {
+                                        sourceChecks[entry.id] = "CHECKING"
+                                        sourceScope.launch { sourceChecks[entry.id] = runCheck(entry) }
+                                    }.padding(vertical = 13.dp),
+                                contentAlignment = Alignment.Center
+                            ) { Text(if (check == "CHECKING") "Testing…" else "Test source", color = White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+                            Box(
+                                Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(Color(0xFFF1EDF6))
+                                    .clickable(enabled = !entry.isBroken) { onOpenSource(entry) }.padding(vertical = 13.dp),
+                                contentAlignment = Alignment.Center
+                            ) { Text("Open catalogue", color = Color(0xFF17131D), fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
                         }
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(6.dp).clip(CircleShape).background(
-                            when { entry.isBroken -> Color(0xFFE0A0A0); check == "ONLINE" -> Color(0xFF9FCB9A); check in setOf("ERROR", "NO_CHAPTERS", "NO_PAGES", "IMAGES_BLOCKED") -> Color(0xFFE0A0A0); else -> if (active) Color(0xFF9FC29A) else Color(0xFF77717D) }
-                        ))
-                        Spacer(Modifier.width(6.dp))
-                        Text(when {
-                            entry.isBroken -> "FLAGGED"
-                            check == "CHECKING" -> "CHECKING…"
-                            check == "ONLINE" -> "VERIFIED · TITLES, CHAPTERS, PAGES, IMAGES"
-                            check == "EMPTY" -> "NO TITLES RETURNED"
-                            check == "NO_CHAPTERS" -> "TITLES LOAD · NO CHAPTERS"
-                            check == "NO_PAGES" -> "CHAPTERS LOAD · NO PAGES"
-                            check == "IMAGES_BLOCKED" -> "PAGES LOAD · IMAGES BLOCKED"
-                            check == "ERROR" -> "CONNECTION FAILED"
-                            active -> "ENABLED · NOT TESTED"
-                            else -> "AVAILABLE"
-                        }, color = when { check in setOf("ERROR", "NO_CHAPTERS", "NO_PAGES", "IMAGES_BLOCKED") || entry.isBroken -> Color(0xFFE0A0A0); check == "ONLINE" -> Color(0xFF9FCB9A); else -> Muted },
-                            fontSize = 7.sp, letterSpacing = .5.sp, modifier = Modifier.weight(1f))
-                        Text(if (isPinned) "PINNED" else "", color = Color(0xFFD0C0DE), fontSize = 6.sp)
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
-                            .background(if (active) Color(0xFF332A3B) else Color(0xFF29252E))
-                            .clickable(enabled = !entry.isBroken) { onToggleEnabled(entry.id) }
-                            .padding(vertical = 9.dp), contentAlignment = Alignment.Center) {
-                            Text(if (active) "DISABLE" else "ENABLE", color = if (active) Color(0xFFD5C5E0) else White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Box(Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF17151B))
-                            .clickable(enabled = check != "CHECKING" && !entry.isBroken) {
-                                sourceChecks[entry.id] = "CHECKING"
-                                sourceScope.launch {
-                                    sourceChecks[entry.id] = try {
-                                        // Full chain: titles -> chapters -> pages -> a real image fetch.
-                                        val titles = entry.popular(0)
-                                        if (titles.isEmpty()) "EMPTY" else {
-                                            val chapterList = entry.chapters(titles.first())
-                                            if (chapterList.isEmpty()) "NO_CHAPTERS" else {
-                                                val pageList = entry.pages(chapterList.first()).pages
-                                                if (pageList.isEmpty()) "NO_PAGES"
-                                                else if (NoirNetwork.probeImage(pageList.first())) "ONLINE" else "IMAGES_BLOCKED"
-                                            }
-                                        }
-                                    } catch (_: Exception) { "ERROR" }
-                                }
-                            }.padding(vertical = 9.dp), contentAlignment = Alignment.Center) {
-                            Text(if (check == "CHECKING") "CHECKING…" else "CHECK", color = Color(0xFFE0D5E8), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    Text("OPEN CATALOGUE  ↗", color = Color(0xFFC8B8D8), fontSize = 7.sp, letterSpacing = 1.sp,
-                        modifier = Modifier.fillMaxWidth().clickable(enabled = !entry.isBroken) { onOpenSource(entry) }.padding(top = 1.dp))
                 }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Row(
+                Modifier.fillMaxWidth().clip(CircleShape).background(Color(0xFFF1EDF6)).clickable { onTab("Discover") }.padding(vertical = 13.dp),
+                horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Browse enabled sources", color = Color(0xFF17131D), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.width(7.dp))
+                Icon(Icons.Rounded.ArrowForward, null, tint = Color(0xFF17131D), modifier = Modifier.size(16.dp))
             }
         }
         BottomNav("Profile", onTab)
