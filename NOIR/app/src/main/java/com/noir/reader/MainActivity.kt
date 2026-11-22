@@ -280,15 +280,6 @@ private fun NoirApp() {
             android.widget.Toast.makeText(context, "Backup exported", android.widget.Toast.LENGTH_SHORT).show()
         }.onFailure { android.widget.Toast.makeText(context, "Backup failed: ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
     }
-    var background by remember { mutableStateOf(NoirBackground(prefs.getString("bg_uri", null), prefs.getBoolean("bg_video", false))) }
-    val pickBackground = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            runCatching { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            val video = context.contentResolver.getType(uri).orEmpty().startsWith("video/")
-            background = NoirBackground(uri.toString(), video)
-            prefs.edit().putString("bg_uri", uri.toString()).putBoolean("bg_video", video).apply()
-        }
-    }
     val importBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) runCatching {
             val raw = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
@@ -313,6 +304,15 @@ private fun NoirApp() {
         }.onFailure { android.widget.Toast.makeText(context, "Restore failed: ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
     }
     val prefs = remember { context.getSharedPreferences("noir_preferences", Context.MODE_PRIVATE) }
+    var background by remember { mutableStateOf(NoirBackground(prefs.getString("bg_uri", null), prefs.getBoolean("bg_video", false))) }
+    val pickBackground = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            val video = context.contentResolver.getType(uri).orEmpty().startsWith("video/")
+            background = NoirBackground(uri.toString(), video)
+            prefs.edit().putString("bg_uri", uri.toString()).putBoolean("bg_video", video).apply()
+        }
+    }
     val sourcePrefs = remember { context.getSharedPreferences("noir_sources", Context.MODE_PRIVATE) }
     val enabledSourceIds = remember {
         mutableStateListOf<String>().apply {
