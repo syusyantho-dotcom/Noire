@@ -60,4 +60,25 @@ object NoirNetwork {
             client.newCall(request).execute().use { it.code in 200..299 }
         }.getOrDefault(false)
     }
+
+    /** True when the cover is an animated GIF, animated WebP or APNG, judged from its first bytes. */
+    suspend fun coverIsAnimated(url: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = Request.Builder().url(url).header("Range", "bytes=0-4095").build()
+            client.newCall(request).execute().use { r ->
+                if (r.code !in 200..299) return@use false
+                val b = r.body?.source()?.let { src -> src.request(4096); src.buffer.snapshot().toByteArray() } ?: return@use false
+                if (b.size < 16) return@use false
+                val head = String(b, 0, 12, Charsets.ISO_8859_1)
+                when {
+                    head.startsWith("GIF8") -> true
+                    head.startsWith("RIFF") && head.substring(8, 12) == "WEBP" ->
+                        String(b, Charsets.ISO_8859_1).contains("ANIM") ||
+                            (String(b, 12, 4, Charsets.ISO_8859_1) == "VP8X" && b.size > 20 && (b[20].toInt() and 0x02) != 0)
+                    b[0] == 0x89.toByte() && head.substring(1, 4) == "PNG" -> String(b, Charsets.ISO_8859_1).contains("acTL")
+                    else -> false
+                }
+            }
+        }.getOrDefault(false)
+    }
 }

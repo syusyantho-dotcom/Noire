@@ -3881,6 +3881,8 @@ private fun SourcesScreen(
         }
     } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { "ERROR" }
 
+    val animatedScan = remember { mutableStateMapOf<String, String>() }
+    var scanning by remember { mutableStateOf(false) }
     suspend fun checkAndRecord(entry: MangaSource) {
         sourceChecks[entry.id] = "CHECKING"
         val result = runCheck(entry)
@@ -3958,6 +3960,29 @@ private fun SourcesScreen(
                         item { NoirChip("Enable all shown", false, { shownEditable.filter { it.id !in enabledSourceIds }.forEach { onToggleEnabled(it.id) } }) }
                         item { NoirChip("Disable all shown", false, { shownEditable.filter { it.id in enabledSourceIds }.forEach { onToggleEnabled(it.id) } }) }
                         item {
+                            NoirChip(if (scanning) "Scanning…" else "Scan animated covers", false, {
+                                if (!scanning) sourceScope.launch {
+                                    scanning = true
+                                    animatedScan.clear()
+                                    try {
+                                        val gate = kotlinx.coroutines.sync.Semaphore(3)
+                                        coroutineScope {
+                                            entries.filter { it.id in enabledSourceIds && !it.isBroken }.map { entry ->
+                                                async {
+                                                    gate.acquire()
+                                                    try {
+                                                        val covers = try { entry.popular(0).mapNotNull { it.coverUrl }.take(12) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
+                                                        animatedScan[entry.name] = if (covers == null) "could not load"
+                                                        else "${covers.map { c -> async { NoirNetwork.coverIsAnimated(c) } }.awaitAll().count { it }} of ${covers.size} animated"
+                                                    } finally { gate.release() }
+                                                }
+                                            }.awaitAll()
+                                        }
+                                    } finally { scanning = false }
+                                }
+                            })
+                        }
+                        item {
                             NoirChip("Test enabled", false, {
                                 sourceScope.launch {
                                     val gate = kotlinx.coroutines.sync.Semaphore(3)
@@ -3972,6 +3997,18 @@ private fun SourcesScreen(
                                 }
                             })
                         }
+                    }
+                }
+            }
+            if (animatedScan.isNotEmpty()) {
+                item(key = "animated-scan") {
+                    Column(Modifier.fillMaxWidth().noirGlass(RoundedCornerShape(22.dp), 0.8f).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("ANIMATED COVERS", color = Muted, fontSize = 9.sp, letterSpacing = 2.sp)
+                        val hits = animatedScan.entries.filter { !it.value.startsWith("0 of") && !it.value.startsWith("could") }.sortedBy { it.key }
+                        if (!scanning && hits.isEmpty()) Text("None of the scanned sources served animated covers on their first page.", color = White, fontSize = 12.sp)
+                        hits.forEach { Text("${it.key}  ·  ${it.value}", color = White, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
+                        val rest = animatedScan.size - hits.size
+                        if (rest > 0) Text("$rest other sources: none found or not reachable", color = Muted, fontSize = 10.sp)
                     }
                 }
             }
