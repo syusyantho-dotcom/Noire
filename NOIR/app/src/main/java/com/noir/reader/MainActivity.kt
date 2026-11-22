@@ -34,6 +34,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
@@ -95,6 +96,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
@@ -4659,21 +4661,34 @@ private fun NoirLogoMark(
     )
 }
 
+private fun introPalette(t: Float): Color {
+    // White-hot → amber → coral → magenta → violet → lavender, cyclic.
+    val stops = listOf(
+        Color(0xFFFFF6B8), Color(0xFFFF9A3D), Color(0xFFFF4F5E), Color(0xFFFF5FC8),
+        Color(0xFF7A4DFF), Color(0xFFC9B8FF), Color(0xFFFFF6B8)
+    )
+    val x = ((t % 1f) + 1f) % 1f * (stops.size - 1)
+    val i = x.toInt().coerceIn(0, stops.size - 2)
+    return androidx.compose.ui.graphics.lerp(stops[i], stops[i + 1], x - i)
+}
+
 @Composable
 private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
     val context = LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-    val overall = remember { Animatable(0f) }      // whole overlay opacity
-    val swell = remember { Animatable(0f) }        // aurora build-up before the reveal
-    val pulse = remember { Animatable(0f) }        // bloom at the chime
-    val markIn = remember { Animatable(0f) }
-    val wordIn = remember { Animatable(0f) }
-    val sweep = remember { Animatable(0f) }
-    val line = remember { Animatable(0f) }
-    val tagIn = remember { Animatable(0f) }
+    val overall = remember { Animatable(0f) }
+    val ringT = remember { Animatable(0f) }
+    val wordT = remember { Animatable(0f) }
+    val flash = remember { Animatable(0f) }
+    val flare = remember { Animatable(0f) }
+    val rise = remember { Animatable(0f) }
+    val glow = remember { Animatable(0f) }
+    val move = remember { Animatable(0f) }
+    val tag = remember { Animatable(0f) }
     val exit = remember { Animatable(0f) }
     val drift = rememberInfiniteTransition(label = "intro-drift")
-    val driftT by drift.animateFloat(0f, 1f, infiniteRepeatable(tween(6000, easing = LinearEasing)), label = "intro-drift-t")
+    val phase = drift.animateFloat(0f, 1f, infiniteRepeatable(tween(5200, easing = LinearEasing)), label = "intro-phase")
 
     LaunchedEffect(Unit) {
         var player: MediaPlayer? = null
@@ -4683,28 +4698,30 @@ private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
             if (playSound && audio.getStreamVolume(AudioManager.STREAM_MUSIC) > 0) {
                 player = runCatching { MediaPlayer.create(appContext, R.raw.noir_intro) }.getOrNull()
                 player?.let { mp ->
-                    runCatching { mp.setVolume(0.8f, 0.8f); mp.start() }
+                    runCatching { mp.setVolume(0.85f, 0.85f); mp.start() }
                         .onFailure { runCatching { mp.release() }; player = null }
                 }
             }
+            // 1) Quiet opening: a violet ring breathes outward while the wordmark warms up.
             kotlinx.coroutines.coroutineScope {
-                launch { overall.animateTo(1f, tween(500)) }
-                launch { swell.animateTo(1f, tween(1350, easing = CubicBezierEasing(0.4f, 0f, 0.8f, 1f))) }
-                launch { line.animateTo(1f, tween(1250, easing = FastOutSlowInEasing)) }
-                launch { delay(250); markIn.animateTo(1f, tween(900, easing = FastOutSlowInEasing)) }
+                launch { overall.animateTo(1f, tween(350)) }
+                launch { ringT.animateTo(1f, tween(1250, easing = LinearOutSlowInEasing)) }
+                launch { wordT.animateTo(1f, tween(1250, easing = LinearEasing)) }
             }
-            // The chime lands here: bloom, wordmark, haptic tap.
+            // 2) Impact: light bursts in, the glowing sheet rises, the logo glides to its corner.
             runCatching { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
             kotlinx.coroutines.coroutineScope {
-                launch { pulse.animateTo(1f, tween(260)); pulse.animateTo(0f, tween(1400)) }
-                launch { wordIn.animateTo(1f, tween(1250, easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f))) }
-                launch { delay(150); sweep.animateTo(1f, tween(1300, easing = FastOutSlowInEasing)) }
-                launch { delay(600); tagIn.animateTo(1f, tween(800)) }
+                launch { flash.animateTo(1f, tween(70)); flash.animateTo(0f, tween(520)) }
+                launch { flare.animateTo(1f, tween(260)); flare.animateTo(0f, tween(950)) }
+                launch { rise.animateTo(1f, tween(1050, easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f))) }
+                launch { glow.animateTo(1f, tween(950)) }
+                launch { move.animateTo(1f, tween(900, easing = FastOutSlowInEasing)) }
+                launch { delay(520); tag.animateTo(1f, tween(700)) }
             }
-            delay(520)
+            delay(1000)
             kotlinx.coroutines.coroutineScope {
-                launch { exit.animateTo(1f, tween(620, easing = FastOutSlowInEasing)) }
-                launch { overall.animateTo(0f, tween(620)) }
+                launch { exit.animateTo(1f, tween(650, easing = FastOutSlowInEasing)) }
+                launch { overall.animateTo(0f, tween(650)) }
             }
         } catch (_: Exception) {
         } finally {
@@ -4716,84 +4733,129 @@ private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
         }
     }
 
-    Box(
-        Modifier.fillMaxSize().background(Color(0xFF020204)).graphicsLayer { alpha = overall.value },
-        contentAlignment = Alignment.Center
-    ) {
-        // Living aurora: violet and indigo light that gathers, blooms at the chime, then settles.
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF010102)).graphicsLayer { alpha = overall.value }) {
+        val wPx = with(density) { maxWidth.toPx() }
+        val hPx = with(density) { maxHeight.toPx() }
+        val rowW = 132.dp
+        val rowWPx = with(density) { rowW.toPx() }
+        val sheetLeftFrac = 0.06f
+        val sheetTopFrac = 0.40f
+
         Canvas(Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            val a = driftT * 2f * Math.PI.toFloat()
-            val energy = 0.35f + 0.65f * swell.value + 0.9f * pulse.value
-            val r = w * (0.55f + 0.35f * swell.value + 0.25f * pulse.value)
-            fun blob(cx: Float, cy: Float, radius: Float, color: Color, alpha: Float) {
+            val breathe = kotlin.math.sin(phase.value * 2f * Math.PI.toFloat() * 2f) * 5.dp.toPx()
+            val top = (h * 1.08f + (h * sheetTopFrac - h * 1.08f) * rise.value) + breathe * rise.value + exit.value * h * 0.22f
+            val left = w * sheetLeftFrac
+            val sw = w * 1.3f
+            val sh = h * 1.3f
+            val corner = 38.dp.toPx()
+            val inten = glow.value * (1f - exit.value)
+
+            // Opening ring.
+            if (ringT.value < 1f) {
+                val r = w * (0.10f + 0.70f * ringT.value)
+                val a = (1f - ringT.value).coerceIn(0f, 1f)
                 drawCircle(
                     brush = Brush.radialGradient(
-                        listOf(color.copy(alpha = (alpha * energy).coerceIn(0f, 1f)), Color.Transparent),
-                        center = Offset(cx, cy), radius = radius
+                        0f to Color.Transparent, 0.66f to Color.Transparent,
+                        0.86f to Color(0xFF5A32D8).copy(alpha = 0.55f * a), 1f to Color.Transparent,
+                        center = Offset(w / 2f, h / 2f), radius = r * 1.15f
                     ),
-                    radius = radius, center = Offset(cx, cy)
+                    radius = r * 1.15f, center = Offset(w / 2f, h / 2f)
                 )
             }
-            blob(w * (0.5f + 0.10f * kotlin.math.cos(a)), h * (0.46f + 0.04f * kotlin.math.sin(a)), r, Color(0xFF6A46FF), 0.42f)
-            blob(w * (0.28f + 0.08f * kotlin.math.sin(a)), h * (0.60f + 0.05f * kotlin.math.cos(a)), r * 0.7f, Color(0xFF2F5BFF), 0.30f)
-            blob(w * (0.74f + 0.07f * kotlin.math.cos(a + 1.7f)), h * (0.38f + 0.05f * kotlin.math.sin(a + 1.7f)), r * 0.62f, Color(0xFFC03CFF), 0.26f)
-            drawRect(Brush.verticalGradient(0f to Color(0xCC020204), 0.38f to Color.Transparent, 0.62f to Color.Transparent, 1f to Color(0xE6020204)))
-        }
-        Column(
-            Modifier.graphicsLayer {
-                val s = 1f + 0.10f * exit.value
-                scaleX = s
-                scaleY = s
-            },
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                Modifier.graphicsLayer {
-                    alpha = markIn.value
-                    val s = 0.72f + 0.28f * markIn.value + 0.06f * pulse.value
-                    scaleX = s
-                    scaleY = s
-                    translationY = (1f - markIn.value) * 18.dp.toPx()
-                }
-            ) { NoirLogoMark(64.dp) }
-            Spacer(Modifier.height(22.dp))
-            val shineStart = -500f + sweep.value * 1700f
-            Text(
-                "NOIR",
-                modifier = Modifier.graphicsLayer {
-                    alpha = wordIn.value
-                    val s = 0.92f + 0.08f * wordIn.value
-                    scaleX = s
-                    scaleY = s
-                },
-                style = androidx.compose.ui.text.TextStyle(
-                    brush = Brush.linearGradient(
-                        colorStops = arrayOf(0f to Color(0xFF9C97AA), 0.5f to Color.White, 1f to Color(0xFF9C97AA)),
-                        start = Offset(shineStart, 0f),
-                        end = Offset(shineStart + 500f, 0f)
-                    ),
-                    fontSize = 50.sp,
-                    fontWeight = FontWeight.Light,
-                    letterSpacing = (22f - 16f * wordIn.value).sp
+            if (inten > 0.001f) {
+                // Light spilling onto the dark area above the sheet.
+                drawCircle(
+                    Brush.radialGradient(listOf(Color(0xFFFF4F5E).copy(alpha = 0.50f * inten), Color.Transparent), center = Offset(w * 0.98f, top * 0.15f), radius = w * 0.95f),
+                    radius = w * 0.95f, center = Offset(w * 0.98f, top * 0.15f)
                 )
-            )
-            Spacer(Modifier.height(18.dp))
-            Box(
-                Modifier.width(150.dp).height(1.dp).graphicsLayer { alpha = 0.9f * line.value; scaleX = line.value }
-                    .background(Brush.horizontalGradient(listOf(Color.Transparent, Color(0xFFCDB8F5), Color.Transparent)))
-            )
-            Spacer(Modifier.height(16.dp))
+                drawCircle(
+                    Brush.radialGradient(listOf(Color(0xFF5B3BD8).copy(alpha = 0.50f * inten), Color.Transparent), center = Offset(0f, top * 0.30f), radius = w * 0.9f),
+                    radius = w * 0.9f, center = Offset(0f, top * 0.30f)
+                )
+                // Rotating hot-spot around the sheet edge.
+                val colors = List(33) { i -> introPalette(i / 32f + phase.value) }
+                val sweep = Brush.sweepGradient(colors, center = Offset(left + sw * 0.4f, top + sh * 0.35f))
+                for (i in 0 until 11) {
+                    val f = 1f - i / 11f
+                    drawRoundRect(
+                        brush = sweep, topLeft = Offset(left, top), size = androidx.compose.ui.geometry.Size(sw, sh),
+                        cornerRadius = CornerRadius(corner), alpha = (0.55f * f * f * inten).coerceIn(0f, 1f),
+                        style = Stroke(width = (2f + i * 9f).dp.toPx())
+                    )
+                }
+                // Inner colour: pink-red pooling toward the bottom, white-hot along the left rim.
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        0f to Color.Transparent, 0.35f to Color.Transparent,
+                        0.75f to Color(0xFFB23CFF).copy(alpha = 0.55f), 1f to Color(0xFFFF5878).copy(alpha = 0.85f),
+                        startY = top, endY = h
+                    ),
+                    topLeft = Offset(left, top), size = androidx.compose.ui.geometry.Size(sw, sh), cornerRadius = CornerRadius(corner), alpha = inten
+                )
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(
+                        0f to Color.White.copy(alpha = 0.95f), 0.35f to Color(0xFFFFC07A).copy(alpha = 0.35f), 1f to Color.Transparent,
+                        startX = left, endX = left + w * 0.22f
+                    ),
+                    topLeft = Offset(left, top), size = androidx.compose.ui.geometry.Size(sw, sh), cornerRadius = CornerRadius(corner), alpha = 0.9f * inten
+                )
+                drawRoundRect(
+                    color = Color.White, topLeft = Offset(left, top), size = androidx.compose.ui.geometry.Size(sw, sh),
+                    cornerRadius = CornerRadius(corner), alpha = 0.85f * inten, style = Stroke(1.6.dp.toPx())
+                )
+            }
+            // Lens flare riding the sheet's left edge.
+            if (flare.value > 0.01f) {
+                val c = Offset(left + 4.dp.toPx(), top + (h - top) * 0.34f)
+                val len = w * 0.55f * flare.value
+                val a = flare.value
+                drawCircle(
+                    Brush.radialGradient(listOf(Color.White.copy(alpha = 0.95f * a), Color(0xFFFFA24A).copy(alpha = 0.45f * a), Color.Transparent), center = c, radius = 110.dp.toPx()),
+                    radius = 110.dp.toPx(), center = c
+                )
+                listOf(0f to 2.2f, 90f to 1.4f, 22f to 1.6f, 112f to 1.1f).forEach { (deg, wd) ->
+                    val rad = Math.toRadians(deg.toDouble())
+                    val dx = (kotlin.math.cos(rad) * len).toFloat()
+                    val dy = (kotlin.math.sin(rad) * len).toFloat()
+                    drawLine(
+                        Brush.linearGradient(listOf(Color.Transparent, Color(0xFFFFB45C).copy(alpha = 0.9f * a), Color.Transparent), start = c - Offset(dx, dy), end = c + Offset(dx, dy)),
+                        start = c - Offset(dx, dy), end = c + Offset(dx, dy), strokeWidth = wd.dp.toPx()
+                    )
+                }
+            }
+            if (flash.value > 0.001f) drawRect(Color.White, alpha = 0.22f * flash.value)
+        }
+
+        // Logo: starts centred and dim, ends white in the sheet's top-left corner.
+        val m = move.value
+        val sheetTopPx = hPx * 1.08f + (hPx * sheetTopFrac - hPx * 1.08f) * rise.value
+        val cx = (wPx - rowWPx) / 2f
+        val cy = hPx / 2f - with(density) { 16.dp.toPx() }
+        val tx = wPx * sheetLeftFrac + with(density) { 24.dp.toPx() }
+        val ty = sheetTopPx + with(density) { 26.dp.toPx() }
+        val warm = androidx.compose.ui.graphics.lerp(
+            androidx.compose.ui.graphics.lerp(Color(0xFF8B6BFF), Color(0xFFE060B8), (wordT.value * 2f).coerceIn(0f, 1f)),
+            Color(0xFFFF6A4D), ((wordT.value - 0.5f) * 2f).coerceIn(0f, 1f)
+        )
+        val logoColor = androidx.compose.ui.graphics.lerp(warm, Color.White, m)
+        Column(
+            Modifier.width(rowW)
+                .offset { IntOffset((cx + (tx - cx) * m).roundToInt(), (cy + (ty - cy) * m + exit.value * hPx * 0.22f * m).roundToInt()) }
+                .graphicsLayer { alpha = (wordT.value * 3f).coerceIn(0f, 1f) }
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(30.dp)) { NoirLogoMark(30.dp) }
+                Spacer(Modifier.width(10.dp))
+                Text("NOIR", color = logoColor, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 4.sp)
+            }
             Text(
-                "A UNIVERSE BETWEEN THE PAGES",
-                modifier = Modifier.graphicsLayer { alpha = tagIn.value; translationY = (1f - tagIn.value) * 8.dp.toPx() },
-                color = Color(0xFFBBAAD6),
-                fontSize = 9.sp,
-                letterSpacing = 3.sp,
-                fontWeight = FontWeight.Medium
+                "A UNIVERSE BETWEEN THE PAGES", color = Color.White.copy(alpha = 0.75f), fontSize = 7.sp, letterSpacing = 1.6.sp,
+                maxLines = 1, softWrap = false,
+                modifier = Modifier.padding(top = 9.dp, start = 2.dp).graphicsLayer { alpha = tag.value; translationY = (1f - tag.value) * 6.dp.toPx() }
             )
         }
     }
 }
-
