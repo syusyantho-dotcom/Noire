@@ -32,6 +32,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -661,7 +662,7 @@ private fun NoirApp() {
         selected = item
     }
     var loading by remember { mutableStateOf(false) }
-    var showIntro by remember { mutableStateOf(launchIntro && !prefs.getBoolean("intro_seen_once", false)) }
+    var showIntro by remember { mutableStateOf(launchIntro) }
     var showWelcome by remember { mutableStateOf(!prefs.getBoolean("welcome_seen", false) && (prefs.getBoolean("intro_seen_once", false) || !launchIntro)) }
     LaunchedEffect(showIntro, showWelcome) {
         if (!showIntro && !showWelcome && shouldShowWhatsNew) {
@@ -2430,7 +2431,7 @@ private fun ProfileScreen(introSound: Boolean, launchIntro: Boolean, matureConte
         Text("APP SETTINGS", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
         SettingSwitch("Intro sound", "Play the short chime when NOIR opens", introSound, onIntroSound)
-        SettingSwitch("One-time intro", "Play the NOIR welcome animation once on first launch", launchIntro, onLaunchIntro)
+        SettingSwitch("Launch intro", "Play the NOIR intro every time the app opens", launchIntro, onLaunchIntro)
         SettingSwitch("Mature catalogues (18+)", "Show adult-rated titles from sources that provide them", matureContentEnabled, { enabled -> if (enabled) showMatureConfirmation = true else onMatureContent(false) })
         Spacer(Modifier.height(22.dp))
         Text("BACKUP & RESTORE", color = Silver, fontSize = 10.sp, letterSpacing = 1.8.sp, fontWeight = FontWeight.Bold)
@@ -4552,156 +4553,137 @@ private fun NoirLogoMark(
 @Composable
 private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
     val context = LocalContext.current
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val alpha = remember { Animatable(0f) }
-    val panelsIn = remember { Animatable(0f) }
-    val panelsOut = remember { Animatable(0f) }
-    val logoAlpha = remember { Animatable(0f) }
-    val logoScale = remember { Animatable(0.76f) }
-    val panelSpecs = listOf(
-        Triple(-112f, -108f, -13f),
-        Triple(112f, -104f, 11f),
-        Triple(-116f, 108f, 9f),
-        Triple(116f, 110f, -10f),
-        Triple(0f, -178f, 4f),
-        Triple(0f, 178f, -5f)
-    )
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val overall = remember { Animatable(0f) }      // whole overlay opacity
+    val swell = remember { Animatable(0f) }        // aurora build-up before the reveal
+    val pulse = remember { Animatable(0f) }        // bloom at the chime
+    val markIn = remember { Animatable(0f) }
+    val wordIn = remember { Animatable(0f) }
+    val sweep = remember { Animatable(0f) }
+    val line = remember { Animatable(0f) }
+    val tagIn = remember { Animatable(0f) }
+    val exit = remember { Animatable(0f) }
+    val drift = rememberInfiniteTransition(label = "intro-drift")
+    val driftT by drift.animateFloat(0f, 1f, infiniteRepeatable(tween(6000, easing = LinearEasing)), label = "intro-drift-t")
+
     LaunchedEffect(Unit) {
         var player: MediaPlayer? = null
         try {
             val appContext = context.applicationContext
             val audio = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             if (playSound && audio.getStreamVolume(AudioManager.STREAM_MUSIC) > 0) {
-                player = runCatching { MediaPlayer.create(appContext, R.raw.noir_chime) }.getOrNull()
-                player?.let { mediaPlayer ->
-                    runCatching { mediaPlayer.setVolume(0.72f, 0.72f); mediaPlayer.start() }
-                        .onFailure { runCatching { mediaPlayer.release() }; player = null }
+                player = runCatching { MediaPlayer.create(appContext, R.raw.noir_intro) }.getOrNull()
+                player?.let { mp ->
+                    runCatching { mp.setVolume(0.8f, 0.8f); mp.start() }
+                        .onFailure { runCatching { mp.release() }; player = null }
                 }
             }
-            alpha.animateTo(1f, tween(380))
-            panelsIn.animateTo(1f, tween(1050, easing = FastOutSlowInEasing))
-            delay(280)
             kotlinx.coroutines.coroutineScope {
-                launch { panelsOut.animateTo(1f, tween(720, easing = FastOutSlowInEasing)) }
-                launch { logoAlpha.animateTo(1f, tween(560)) }
-                launch { logoScale.animateTo(1f, tween(820, easing = FastOutSlowInEasing)) }
+                launch { overall.animateTo(1f, tween(500)) }
+                launch { swell.animateTo(1f, tween(1350, easing = CubicBezierEasing(0.4f, 0f, 0.8f, 1f))) }
+                launch { line.animateTo(1f, tween(1250, easing = FastOutSlowInEasing)) }
+                launch { delay(250); markIn.animateTo(1f, tween(900, easing = FastOutSlowInEasing)) }
             }
-            delay(620)
-            alpha.animateTo(0f, tween(360))
+            // The chime lands here: bloom, wordmark, haptic tap.
+            runCatching { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
+            kotlinx.coroutines.coroutineScope {
+                launch { pulse.animateTo(1f, tween(260)); pulse.animateTo(0f, tween(1400)) }
+                launch { wordIn.animateTo(1f, tween(1250, easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f))) }
+                launch { delay(150); sweep.animateTo(1f, tween(1300, easing = FastOutSlowInEasing)) }
+                launch { delay(600); tagIn.animateTo(1f, tween(800)) }
+            }
+            delay(520)
+            kotlinx.coroutines.coroutineScope {
+                launch { exit.animateTo(1f, tween(620, easing = FastOutSlowInEasing)) }
+                launch { overall.animateTo(0f, tween(620)) }
+            }
         } catch (_: Exception) {
         } finally {
-            player?.let { mediaPlayer ->
-                runCatching { if (mediaPlayer.isPlaying) mediaPlayer.stop() }
-                runCatching { mediaPlayer.release() }
+            player?.let { mp ->
+                runCatching { if (mp.isPlaying) mp.stop() }
+                runCatching { mp.release() }
             }
             onFinished()
         }
     }
-    Box(Modifier.fillMaxSize().background(Black).graphicsLayer { this.alpha = alpha.value }, contentAlignment = Alignment.Center) {
-        panelSpecs.forEachIndexed { index, spec ->
-            NoirIntroPanel(
-                index = index,
-                targetX = spec.first,
-                targetY = spec.second,
-                tilt = spec.third,
-                enter = panelsIn.value,
-                dissolve = panelsOut.value,
-                density = density
-            )
+
+    Box(
+        Modifier.fillMaxSize().background(Color(0xFF020204)).graphicsLayer { alpha = overall.value },
+        contentAlignment = Alignment.Center
+    ) {
+        // Living aurora: violet and indigo light that gathers, blooms at the chime, then settles.
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            val a = driftT * 2f * Math.PI.toFloat()
+            val energy = 0.35f + 0.65f * swell.value + 0.9f * pulse.value
+            val r = w * (0.55f + 0.35f * swell.value + 0.25f * pulse.value)
+            fun blob(cx: Float, cy: Float, radius: Float, color: Color, alpha: Float) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(color.copy(alpha = (alpha * energy).coerceIn(0f, 1f)), Color.Transparent),
+                        center = Offset(cx, cy), radius = radius
+                    ),
+                    radius = radius, center = Offset(cx, cy)
+                )
+            }
+            blob(w * (0.5f + 0.10f * kotlin.math.cos(a)), h * (0.46f + 0.04f * kotlin.math.sin(a)), r, Color(0xFF6A46FF), 0.42f)
+            blob(w * (0.28f + 0.08f * kotlin.math.sin(a)), h * (0.60f + 0.05f * kotlin.math.cos(a)), r * 0.7f, Color(0xFF2F5BFF), 0.30f)
+            blob(w * (0.74f + 0.07f * kotlin.math.cos(a + 1.7f)), h * (0.38f + 0.05f * kotlin.math.sin(a + 1.7f)), r * 0.62f, Color(0xFFC03CFF), 0.26f)
+            drawRect(Brush.verticalGradient(0f to Color(0xCC020204), 0.38f to Color.Transparent, 0.62f to Color.Transparent, 1f to Color(0xE6020204)))
         }
         Column(
-            modifier = Modifier.graphicsLayer {
-                this.alpha = logoAlpha.value
-                scaleX = logoScale.value
-                scaleY = logoScale.value
+            Modifier.graphicsLayer {
+                val s = 1f + 0.10f * exit.value
+                scaleX = s
+                scaleY = s
             },
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            NoirLogoMark(88.dp)
-            Spacer(Modifier.height(2.dp))
-            Image(
-                painter = painterResource(id = R.drawable.noir_intro_wordmark),
-                contentDescription = "NOIR — Manga, Manhwa, More",
-                modifier = Modifier.width(244.dp).height(138.dp),
-                contentScale = ContentScale.Fit
-            )
-        }
-        Text(
-            "A UNIVERSE BETWEEN THE PAGES",
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 54.dp)
-                .graphicsLayer { this.alpha = logoAlpha.value * (1f - panelsOut.value * 0.15f) },
-            color = Color(0xFFB9A7D2),
-            fontSize = 8.sp,
-            letterSpacing = 2.6.sp,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
-
-@Composable
-private fun NoirIntroPanel(
-    index: Int,
-    targetX: Float,
-    targetY: Float,
-    tilt: Float,
-    enter: Float,
-    dissolve: Float,
-    density: androidx.compose.ui.unit.Density
-) {
-    val fromX = if (targetX < 0f) -300f else if (targetX > 0f) 300f else 0f
-    val fromY = if (targetY < 0f) -260f else if (targetY > 0f) 260f else -280f
-    val stagger = (index % 3) * 0.08f
-    val progress = ((enter - stagger) / (1f - stagger)).coerceIn(0f, 1f)
-    val driftX = with(density) { (fromX * (1f - progress) - targetX * dissolve).dp.toPx() }
-    val driftY = with(density) { (fromY * (1f - progress) - targetY * dissolve).dp.toPx() }
-    val panelScale = (0.58f + 0.42f * progress) * (1f - 0.82f * dissolve)
-    val panelAlpha = progress * (1f - dissolve)
-    Box(
-        Modifier
-            .offset(x = targetX.dp, y = targetY.dp)
-            .size(width = 104.dp, height = 142.dp)
-            .graphicsLayer {
-                translationX = driftX
-                translationY = driftY
-                rotationZ = tilt * (1f - dissolve) + (1f - progress) * tilt * 1.8f
-                scaleX = panelScale
-                scaleY = panelScale
-                alpha = panelAlpha
-            }
-            .clip(RoundedCornerShape(8.dp))
-            .background(Brush.linearGradient(
-                listOf(Color(0xFF29232F), Color(0xFF111014), Color(0xFF33263D))
-            ))
-            .border(1.dp, Color(0x887D6A91), RoundedCornerShape(8.dp))
-            .padding(8.dp)
-    ) {
-        Box(Modifier.fillMaxSize()) {
-            Text(
-                listOf("CHAPTER 01", "UNKNOWN", "THE BEGINNING", "NO SIGNAL", "PAGE 001", "BEYOND")[index],
-                modifier = Modifier.align(Alignment.TopStart),
-                color = Color(0xFFD8CBE7),
-                fontSize = 5.sp,
-                letterSpacing = 1.sp
-            )
             Box(
-                Modifier.align(Alignment.Center).fillMaxWidth(0.72f).height(68.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Brush.radialGradient(
-                        listOf(Color(0xFF8C70AA).copy(alpha = 0.62f), Color(0xFF29232F), Color(0xFF151319))
-                    ))
-            )
-            Box(Modifier.align(Alignment.Center).padding(top = 8.dp).size(30.dp)
-                .border(1.dp, Color(0x99E5D9F0), CircleShape))
-            Box(Modifier.align(Alignment.Center).padding(top = 8.dp).width(1.dp).height(62.dp)
-                .background(Color(0x99D8C8E8)))
-            Column(Modifier.align(Alignment.BottomStart), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                repeat(3) { line ->
-                    Box(Modifier.width((62 - line * 10).dp).height(2.dp)
-                        .background(Color(0x668E8299), RoundedCornerShape(2.dp)))
+                Modifier.graphicsLayer {
+                    alpha = markIn.value
+                    val s = 0.72f + 0.28f * markIn.value + 0.06f * pulse.value
+                    scaleX = s
+                    scaleY = s
+                    translationY = (1f - markIn.value) * 18.dp.toPx()
                 }
-            }
-            Box(Modifier.align(Alignment.BottomEnd).size(13.dp)
-                .background(Color(0xFFBDA7D4), RoundedCornerShape(2.dp)))
+            ) { NoirLogoMark(64.dp) }
+            Spacer(Modifier.height(22.dp))
+            val shineStart = -500f + sweep.value * 1700f
+            Text(
+                "NOIR",
+                modifier = Modifier.graphicsLayer {
+                    alpha = wordIn.value
+                    val s = 0.92f + 0.08f * wordIn.value
+                    scaleX = s
+                    scaleY = s
+                },
+                style = androidx.compose.ui.text.TextStyle(
+                    brush = Brush.linearGradient(
+                        colorStops = arrayOf(0f to Color(0xFF9C97AA), 0.5f to Color.White, 1f to Color(0xFF9C97AA)),
+                        start = Offset(shineStart, 0f),
+                        end = Offset(shineStart + 500f, 0f)
+                    ),
+                    fontSize = 50.sp,
+                    fontWeight = FontWeight.Light,
+                    letterSpacing = (22f - 16f * wordIn.value).sp
+                )
+            )
+            Spacer(Modifier.height(18.dp))
+            Box(
+                Modifier.width(150.dp).height(1.dp).graphicsLayer { alpha = 0.9f * line.value; scaleX = line.value }
+                    .background(Brush.horizontalGradient(listOf(Color.Transparent, Color(0xFFCDB8F5), Color.Transparent)))
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "A UNIVERSE BETWEEN THE PAGES",
+                modifier = Modifier.graphicsLayer { alpha = tagIn.value; translationY = (1f - tagIn.value) * 8.dp.toPx() },
+                color = Color(0xFFBBAAD6),
+                fontSize = 9.sp,
+                letterSpacing = 3.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
