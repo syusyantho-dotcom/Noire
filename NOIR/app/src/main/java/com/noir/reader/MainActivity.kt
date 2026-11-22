@@ -720,29 +720,15 @@ private fun NoirApp() {
         selected != null -> "detail:" + selected?.sourceId + ":" + selected?.id
         else -> "tab:" + tab
     }
-    var routeVisible by remember(routeKey) { mutableStateOf(false) }
-    LaunchedEffect(routeKey) { routeVisible = true }
     val enteringReader = selectedChapter != null
-    val routeAlpha by animateFloatAsState(
-        if (routeVisible) 1f else 0f,
-        tween(if (!studioMotion) 0 else if (enteringReader) 420 else 230, delayMillis = if (studioMotion && enteringReader) 35 else 0, easing = FastOutSlowInEasing),
-        label = "noir-route-fade"
-    )
-    val routeScale by animateFloatAsState(
-        if (routeVisible || !studioMotion) 1f else if (enteringReader) 0.955f else 0.982f,
-        spring(dampingRatio = if (enteringReader) 0.82f else 0.88f, stiffness = if (enteringReader) 190f else 280f),
-        label = "noir-route-scale"
-    )
-    val routeOffset by animateFloatAsState(
-        if (routeVisible) 0f else if (enteringReader) 38f else 16f,
-        tween(if (!studioMotion) 0 else if (enteringReader) 460 else 280, easing = FastOutSlowInEasing),
-        label = "noir-route-slide"
-    )
-    val routeCorner by animateFloatAsState(
-        if (enteringReader && !routeVisible) 28f else 0f,
-        tween(430, easing = FastOutSlowInEasing),
-        label = "noir-reader-entry-corners"
-    )
+    val routeDepth = when { selectedChapter != null -> 3; selectedSource != null || selected != null -> 2; else -> 1 }
+    val depthHolder = remember { intArrayOf(routeDepth) }
+    // +1 = pushing deeper (detail/reader), -1 = going back, 0 = switching tabs.
+    val routeDirection = remember(routeKey) { (routeDepth - depthHolder[0]).also { depthHolder[0] = routeDepth } }
+    val enter = remember(routeKey) { Animatable(if (studioMotion) 0f else 1f) }
+    LaunchedEffect(routeKey) {
+        if (studioMotion) enter.animateTo(1f, tween(if (enteringReader) 480 else 380, easing = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)))
+    }
 
     var serverGenre by remember { mutableStateOf<String?>(null) }
     var incomingGenre by remember { mutableStateOf<String?>(null) }
@@ -927,16 +913,20 @@ private fun NoirApp() {
         Surface(Modifier.fillMaxSize(), color = Black) {
           Box(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().graphicsLayer {
-                alpha = routeAlpha
-                scaleX = routeScale
-                scaleY = routeScale
-                translationY = routeOffset * density
+                val p = enter.value
+                alpha = (p * 1.7f).coerceAtMost(1f)
+                val s = if (routeDirection > 0) 0.965f + 0.035f * p else 0.985f + 0.015f * p
+                scaleX = s
+                scaleY = s
+                // iOS-style push from the right, gentle drift when returning, pure fade between tabs.
+                translationX = (1f - p) * size.width * when { routeDirection > 0 && !enteringReader -> 0.16f; routeDirection < 0 -> -0.07f; else -> 0f }
+                translationY = if (enteringReader) (1f - p) * 38f * density else 0f
                 if (enteringReader) {
-                    shape = RoundedCornerShape(routeCorner.dp)
+                    shape = RoundedCornerShape(((1f - p) * 28f).dp)
                     clip = true
                     cameraDistance = 32f * density
                 }
-                rotationX = if (studioMotion && enteringReader) (1f - routeAlpha) * 1.6f else 0f
+                rotationX = if (studioMotion && enteringReader) (1f - p) * 1.6f else 0f
             }) {
             key(routeKey) {
             when {
@@ -1758,6 +1748,8 @@ private fun CatalogueScreen(
                     if (rows.isEmpty()) {
                         item(key = "no-match") {
                             Column(Modifier.fillMaxWidth().noirGlass(RoundedCornerShape(24.dp), 0.7f).padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                NoirMascot(NoirMascotKind.STAR, 110.dp)
+                                Spacer(Modifier.height(8.dp))
                                 Text("Nothing matches these filters", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.height(6.dp))
                                 Text("Loosen a genre or clear everything to see the full catalogue.", color = Muted, fontSize = 12.sp)
@@ -2028,6 +2020,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
     }
     val backdropStory = featuredStories.getOrNull(heroPagerState.currentPage) ?: recentlyRead.firstOrNull()
     val heroShape = RoundedCornerShape(32.dp)
+    val seenReveals = remember { mutableSetOf<String>() }
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -2040,7 +2033,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                 verticalArrangement = Arrangement.spacedBy(30.dp)
             ) {
                 item {
-                    Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    Column(Modifier.noirReveal(seenReveals, "header", 40).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                                 NoirLogoMark(30.dp)
@@ -2076,7 +2069,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                 item {
                     HorizontalPager(
                         state = heroPagerState,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().noirReveal(seenReveals, "hero", 160),
                         pageSpacing = 12.dp,
                         contentPadding = PaddingValues(horizontal = 20.dp)
                     ) { page ->
@@ -2205,6 +2198,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                     else -> item {
                         val shelfState = rememberLazyListState()
                         LazyRow(
+                            modifier = Modifier.noirReveal(seenReveals, "shelf", 280),
                             state = shelfState,
                             flingBehavior = androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior(shelfState),
                             horizontalArrangement = Arrangement.spacedBy(15.dp),
@@ -2260,7 +2254,7 @@ private fun HomeScreen(catalogue: List<Series>, loading: Boolean, error: String?
                             Spacer(Modifier.height(4.dp))
                             Text("Explore the NOIR catalogue", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
                         }
-                        Icon(Icons.Rounded.ArrowForward, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(22.dp))
+                        NoirMascot(NoirMascotKind.SCARF, 64.dp)
                     }
                 }
                 item { Text("NOIR  •  MANGA  •  MANHWA  •  MORE", color = Color(0xFF625D69), fontSize = 8.sp, letterSpacing = 2.sp, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
@@ -4747,6 +4741,43 @@ private fun NoirMotionAtmosphere(modifier: Modifier = Modifier) {
     }
 }
 
+private enum class NoirMascotKind(val res: Int) {
+    SIT(R.drawable.mascot_sit), SLEEP(R.drawable.mascot_sleep), PEEK(R.drawable.mascot_peek),
+    STAR(R.drawable.mascot_star), SCARF(R.drawable.mascot_scarf)
+}
+
+@Composable
+private fun NoirMascot(kind: NoirMascotKind, width: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier, bob: Boolean = true) {
+    val transition = rememberInfiniteTransition(label = "mascot-bob")
+    val lift = transition.animateFloat(
+        0f, 1f, infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "mascot-lift"
+    )
+    Image(
+        painter = painterResource(kind.res), contentDescription = null,
+        modifier = modifier.width(width).graphicsLayer { if (bob) translationY = -lift.value * 4.dp.toPx() },
+        contentScale = ContentScale.Fit
+    )
+}
+
+/** Soft one-time entrance for a section: fades up with a small stagger. */
+@Composable
+private fun Modifier.noirReveal(seen: MutableSet<String>, key: String, delayMs: Int): Modifier {
+    val already = remember { key in seen }
+    val p = remember { Animatable(if (already) 1f else 0f) }
+    LaunchedEffect(Unit) {
+        if (!already) {
+            delay(delayMs.toLong())
+            seen.add(key)
+            p.animateTo(1f, tween(560, easing = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)))
+        }
+    }
+    return this.graphicsLayer {
+        alpha = p.value
+        translationY = (1f - p.value) * 26.dp.toPx()
+    }
+}
+
 @Composable
 private fun NoirLoadingMark() {
     val transition = rememberInfiniteTransition(label = "noir-loading-mark")
@@ -4775,6 +4806,8 @@ private fun NoirLoadingMark() {
 private fun LoadingState(message: String) {
     Box(Modifier.fillMaxWidth().padding(30.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            NoirMascot(NoirMascotKind.PEEK, 124.dp)
+            Spacer(Modifier.height(8.dp))
             NoirLoadingMark()
             Spacer(Modifier.height(12.dp))
             Text(message, color = Muted, fontSize = 11.sp)
@@ -4782,13 +4815,19 @@ private fun LoadingState(message: String) {
     }
 }
 @Composable
-private fun ErrorState(message: String) { Text(message, color = Color(0xFFE3A4A4), fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(18.dp)) }
+private fun ErrorState(message: String) {
+    Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        NoirMascot(NoirMascotKind.SIT, 92.dp)
+        Spacer(Modifier.height(8.dp))
+        Text(message, color = Color(0xFFE3A4A4), fontSize = 12.sp)
+    }
+}
 @Composable
 private fun EmptyState(title: String, message: String) {
     Box(Modifier.fillMaxWidth().padding(25.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Rounded.MenuBook, null, tint = Muted, modifier = Modifier.size(36.dp))
-            Spacer(Modifier.height(12.dp))
+            NoirMascot(NoirMascotKind.SLEEP, 132.dp)
+            Spacer(Modifier.height(10.dp))
             Text(title, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(5.dp))
             Text(message, color = Muted, fontSize = 11.sp)
@@ -4989,6 +5028,7 @@ private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
     val move = remember { Animatable(0f) }
     val tag = remember { Animatable(0f) }
     val exit = remember { Animatable(0f) }
+    val pops = remember { List(5) { Animatable(0f) } }
     val drift = rememberInfiniteTransition(label = "intro-drift")
     val phase = drift.animateFloat(0f, 1f, infiniteRepeatable(tween(5200, easing = LinearEasing)), label = "intro-phase")
 
@@ -5019,6 +5059,7 @@ private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
                 launch { glow.animateTo(1f, tween(950)) }
                 launch { move.animateTo(1f, tween(900, easing = FastOutSlowInEasing)) }
                 launch { delay(520); tag.animateTo(1f, tween(700)) }
+                pops.forEachIndexed { i, a -> launch { delay(380L + i * 150L); a.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 260f)) } }
             }
             delay(1000)
             kotlinx.coroutines.coroutineScope {
@@ -5129,6 +5170,36 @@ private fun IntroOverlay(playSound: Boolean, onFinished: () -> Unit) {
                 }
             }
             if (flash.value > 0.001f) drawRect(Color.White, alpha = 0.22f * flash.value)
+        }
+
+        // The crew: five little NOIR cats pop in once the sheet has risen, so the glow is never empty.
+        val crew = remember {
+            listOf(
+                Triple(NoirMascotKind.PEEK, floatArrayOf(0.60f, 0.495f), 128f),
+                Triple(NoirMascotKind.SIT, floatArrayOf(0.05f, 0.565f), 118f),
+                Triple(NoirMascotKind.SCARF, floatArrayOf(0.62f, 0.585f), 104f),
+                Triple(NoirMascotKind.STAR, floatArrayOf(0.07f, 0.755f), 124f),
+                Triple(NoirMascotKind.SLEEP, floatArrayOf(0.47f, 0.775f), 168f)
+            )
+        }
+        crew.forEachIndexed { i, (kind, pos, sizeDp) ->
+            Image(
+                painter = painterResource(kind.res), contentDescription = null, contentScale = ContentScale.Fit,
+                modifier = Modifier.width(sizeDp.dp)
+                    .offset {
+                        val bob = kotlin.math.sin(phase.value * 2f * Math.PI.toFloat() + i * 1.3f) * 4.dp.toPx()
+                        IntOffset((wPx * pos[0]).roundToInt(), (hPx * pos[1] + bob + exit.value * hPx * 0.22f).roundToInt())
+                    }
+                    .graphicsLayer {
+                        val p = pops[i].value
+                        alpha = p.coerceIn(0f, 1f)
+                        val sc = 0.55f + 0.45f * p
+                        scaleX = sc
+                        scaleY = sc
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                        translationY = (1f - p) * 36.dp.toPx()
+                    }
+            )
         }
 
         // Logo: starts centred and dim, ends white in the sheet's top-left corner.
