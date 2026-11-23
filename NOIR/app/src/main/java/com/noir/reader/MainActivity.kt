@@ -234,6 +234,12 @@ class MainActivity : ComponentActivity() {
                 .putBoolean("notification_permission_asked", true).apply()
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1601)
         }
+        val crashPrefs = getSharedPreferences("noir_crash", Context.MODE_PRIVATE)
+        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching { crashPrefs.edit().putString("trace", android.util.Log.getStackTraceString(error).take(3500)).commit() }
+            previousHandler?.uncaughtException(thread, error)
+        }
         setContent { NoirApp() }
     }
 }
@@ -1180,6 +1186,23 @@ private fun NoirApp() {
                 confirmButton = { TextButton(onClick = { showAbout = false }) { Text("CLOSE", color = Silver) } },
                 containerColor = Panel
             )
+            var crashTrace by remember { mutableStateOf(context.getSharedPreferences("noir_crash", Context.MODE_PRIVATE).getString("trace", null)) }
+            crashTrace?.let { trace ->
+                AlertDialog(
+                    onDismissRequest = { },
+                    title = { Text("NOIR closed unexpectedly") },
+                    text = { Text(trace, fontSize = 9.sp, lineHeight = 12.sp, modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("NOIR crash", trace))
+                            context.getSharedPreferences("noir_crash", Context.MODE_PRIVATE).edit().remove("trace").apply()
+                            crashTrace = null
+                        }) { Text("Copy & close") }
+                    },
+                    dismissButton = { TextButton(onClick = { context.getSharedPreferences("noir_crash", Context.MODE_PRIVATE).edit().remove("trace").apply(); crashTrace = null }) { Text("Dismiss") } }
+                )
+            }
             if (showIntro) {
                 val finishIntro: () -> Unit = {
                     showIntro = false
