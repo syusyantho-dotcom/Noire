@@ -519,6 +519,13 @@ private fun NoirApp() {
         }
         prefs.edit().putString("recent_series", stored.toString()).apply()
     }
+    remember { CoverOverrides.init(prefs) }
+    val customCategories = remember {
+        mutableStateListOf<String>().apply {
+            runCatching { val a = JSONArray(prefs.getString("custom_categories", "[]")); for (i in 0 until a.length()) add(a.getString(i)) }
+        }
+    }
+    val saveCustomCategories = { prefs.edit().putString("custom_categories", JSONArray(customCategories.toList()).toString()).apply() }
     val libraryCategories = remember {
         mutableStateMapOf<String, String>().apply {
             runCatching {
@@ -1070,6 +1077,18 @@ private fun NoirApp() {
                 )
                 tab == "Library" -> LibraryScreen(
                     saved.toList(), recentlyRead.toList(), libraryCategories.toMap(), seriesProgress.toMap(), readingHistory.toMap(),
+                    customCategories = customCategories.toList(),
+                    onAddCategory = { name ->
+                        val clean = name.trim()
+                        if (clean.isNotEmpty() && clean.length <= 24 && customCategories.none { it.equals(clean, true) } &&
+                            clean.lowercase() !in listOf("all", "reading", "plan to read", "completed", "on hold", "dropped")) {
+                            customCategories.add(clean); saveCustomCategories()
+                        }
+                    },
+                    onRemoveCategory = { name ->
+                        customCategories.remove(name); saveCustomCategories()
+                        libraryCategories.filterValues { it == name }.keys.toList().forEach { libraryCategories.remove(it) }
+                    },
                     onCategoryChange = { series, category ->
                         val key = "${series.sourceId}:${series.id}"
                         if (category == "Reading") libraryCategories.remove(key) else libraryCategories[key] = category
@@ -2541,7 +2560,7 @@ private fun NoirReveal(
 
 @Composable
 private fun SeriesCover(series: Series, modifier: Modifier = Modifier) {
-    Cover(series.coverUrl, modifier)
+    Cover(series.displayCover(), modifier)
 }
 
 @Composable
@@ -3610,6 +3629,31 @@ private fun ReaderScreen(
                 latestOnProgress(lastKnownPage)
             }
     }
+    var autoScroll by remember { mutableStateOf(false) }
+    var autoSpeed by remember { mutableFloatStateOf(readerPrefs.getFloat("auto_speed", 120f).coerceIn(30f, 600f)) }
+    LaunchedEffect(autoSpeed) { readerPrefs.edit().putFloat("auto_speed", autoSpeed).apply() }
+    LaunchedEffect(autoScroll, isPaged, pages.size) {
+        if (!autoScroll || pages.isEmpty()) return@LaunchedEffect
+        if (!isPaged) {
+            var last = withFrameNanos { it }
+            while (true) {
+                val now = withFrameNanos { it }
+                val dt = (now - last) / 1_000_000_000f
+                last = now
+                listState.scrollBy(autoSpeed * dt)
+                if (!listState.canScrollForward) { autoScroll = false; break }
+            }
+        } else {
+            while (pagerState.currentPage < pages.lastIndex) {
+                delay((90000f / autoSpeed).toLong().coerceIn(400L, 12000L))
+                if (pagerState.currentPage < pages.lastIndex) pagerState.animateScrollToPage(pagerState.currentPage + 1)
+            }
+            autoScroll = false
+        }
+    }
+    LaunchedEffect(Unit) {
+        listState.interactionSource.interactions.collect { if (it is androidx.compose.foundation.interaction.DragInteraction.Start) autoScroll = false }
+    }
     val noirFling = remember { NoirFlingBehavior(androidx.compose.animation.core.exponentialDecay(frictionMultiplier = 0.6f)) }
     val currentPage = if (isPaged) pagerState.currentPage else listState.firstVisibleItemIndex
     var scrubPage by remember { mutableFloatStateOf(initialPage.coerceAtLeast(0).toFloat()) }
@@ -3780,6 +3824,19 @@ private fun ReaderScreen(
                 }
             }
             if (pages.isNotEmpty()) {
+                Row(
+                    Modifier.align(Alignment.TopStart).padding(12.dp).graphicsLayer { alpha = if (autoScroll) 1f else readerControlsAlpha }
+                        .clip(RoundedCornerShape(30.dp)).background(Color(0xB51A1920)).border(1.dp, Color(0x557F788B), RoundedCornerShape(30.dp)),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(if (autoScroll) "❚❚" else "▶  AUTO", color = Color(0xFFD6C5F2), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
+                        modifier = Modifier.clickable { autoScroll = !autoScroll }.padding(horizontal = 12.dp, vertical = 8.dp))
+                    if (autoScroll) {
+                        Text("−", color = White, fontSize = 15.sp, modifier = Modifier.clickable { autoSpeed = (autoSpeed - 30f).coerceAtLeast(30f) }.padding(horizontal = 10.dp, vertical = 4.dp))
+                        Text("${(autoSpeed / 30f).roundToInt()}x", color = Color(0xFFE8E4EC), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                        Text("+", color = White, fontSize = 15.sp, modifier = Modifier.clickable { autoSpeed = (autoSpeed + 30f).coerceAtMost(600f) }.padding(horizontal = 10.dp, vertical = 4.dp))
+                    }
+                }
                 Box(Modifier.align(Alignment.TopEnd).padding(12.dp).graphicsLayer { alpha = readerControlsAlpha }.clip(RoundedCornerShape(30.dp))
                     .background(Color(0xB51A1920)).border(1.dp, Color(0x557F788B), RoundedCornerShape(30.dp))
                     .padding(horizontal = 11.dp, vertical = 7.dp)) {
@@ -4465,12 +4522,42 @@ private fun LibraryScreen(
     categories: Map<String, String>,
     progressBySeries: Map<String, Float>,
     readingHistory: Map<String, ReadingHistoryEntry>,
+    customCategories: List<String> = emptyList(),
+    onAddCategory: (String) -> Unit = {},
+    onRemoveCategory: (String) -> Unit = {},
     onCategoryChange: (Series, String) -> Unit,
     onOpen: (Series) -> Unit,
     onResume: (Series) -> Unit,
     onTab: (String) -> Unit
 ) {
-    val categoryOptions = listOf("All", "Reading", "Plan to read", "Completed", "On hold", "Dropped")
+    val categoryOptions = listOf("All", "Reading", "Plan to read", "Completed", "On hold", "Dropped") + customCategories
+    val libContext = LocalContext.current
+    val libScope = rememberCoroutineScope()
+    var showNewCategory by remember { mutableStateOf(false) }
+    var newCategoryName by remember { mutableStateOf("") }
+    var categoryToDelete by remember { mutableStateOf<String?>(null) }
+    var improving by remember { mutableStateOf(false) }
+    var linkTarget by remember { mutableStateOf<Series?>(null) }
+    var linkText by remember { mutableStateOf("") }
+    var pickTarget by remember { mutableStateOf<Series?>(null) }
+    val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val target = pickTarget
+        if (uri != null && target != null) {
+            runCatching { libContext.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            CoverOverrides.set(CoverOverrides.key(target), uri.toString())
+        }
+        pickTarget = null
+    }
+    suspend fun improveCover(series: Series, force: Boolean): Boolean {
+        val key = CoverOverrides.key(series)
+        val current = series.displayCover()
+        val currentWidth = current?.let { CoverFinder.widthOf(it) } ?: 0
+        if (!force && currentWidth >= 600) return false
+        val best = CoverFinder.findBest(series.title) ?: return false
+        val bestWidth = CoverFinder.widthOf(best)
+        if (bestWidth > currentWidth * 1.15f) { CoverOverrides.set(key, best); return true }
+        return false
+    }
     var selectedCategory by remember { mutableStateOf("All") }
     var selectedSort by remember { mutableStateOf("Recently added") }
     var showSortMenu by remember { mutableStateOf(false) }
@@ -4544,9 +4631,56 @@ private fun LibraryScreen(
                             .clickable { selectedCategory = category }
                             .padding(horizontal = 13.dp, vertical = 9.dp)
                     ) {
-                        Text("$category  $count", color = if (selectedCategory == category) Color(0xFF211B27) else Silver, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("$category  $count", color = if (selectedCategory == category) Color(0xFF211B27) else Silver, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                            if (category in customCategories && selectedCategory == category) {
+                                Text("  ✕", color = Color(0xFF211B27), fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.clickable { categoryToDelete = category })
+                            }
+                        }
                     }
                 }
+                item {
+                    Box(Modifier.clip(RoundedCornerShape(24.dp)).background(Color(0xFF241D31)).clickable { newCategoryName = ""; showNewCategory = true }
+                        .padding(horizontal = 13.dp, vertical = 9.dp)) { Text("+ New", color = Color(0xFFD6C5F2), fontSize = 9.sp, fontWeight = FontWeight.Medium) }
+                }
+                item {
+                    Box(Modifier.clip(RoundedCornerShape(24.dp)).background(Color(0xFF241D31))
+                        .clickable {
+                            if (!improving && items.isNotEmpty()) libScope.launch {
+                                improving = true
+                                var improved = 0
+                                try { items.forEach { if (improveCover(it, false)) improved++ } } finally { improving = false }
+                                android.widget.Toast.makeText(libContext, if (improved > 0) "Better covers found for $improved titles" else "No better covers found", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .padding(horizontal = 13.dp, vertical = 9.dp)) { Text(if (improving) "Finding covers…" else "Improve covers", color = Color(0xFFD6C5F2), fontSize = 9.sp, fontWeight = FontWeight.Medium) }
+                }
+            }
+            if (showNewCategory) AlertDialog(
+                onDismissRequest = { showNewCategory = false },
+                title = { Text("New category") },
+                text = { OutlinedTextField(newCategoryName, { newCategoryName = it.take(24) }, singleLine = true, placeholder = { Text("e.g. Favourites") }) },
+                confirmButton = { TextButton(onClick = { onAddCategory(newCategoryName); showNewCategory = false }) { Text("Create") } },
+                dismissButton = { TextButton(onClick = { showNewCategory = false }) { Text("Cancel") } }
+            )
+            categoryToDelete?.let { name ->
+                AlertDialog(
+                    onDismissRequest = { categoryToDelete = null },
+                    title = { Text("Delete \"$name\"?") },
+                    text = { Text("Titles in it go back to Reading. Nothing is removed from your library.") },
+                    confirmButton = { TextButton(onClick = { onRemoveCategory(name); if (selectedCategory == name) selectedCategory = "All"; categoryToDelete = null }) { Text("Delete") } },
+                    dismissButton = { TextButton(onClick = { categoryToDelete = null }) { Text("Cancel") } }
+                )
+            }
+            linkTarget?.let { target ->
+                AlertDialog(
+                    onDismissRequest = { linkTarget = null },
+                    title = { Text("Cover image link") },
+                    text = { OutlinedTextField(linkText, { linkText = it }, singleLine = true, placeholder = { Text("https://…") }) },
+                    confirmButton = { TextButton(onClick = { if (linkText.startsWith("http")) CoverOverrides.set(CoverOverrides.key(target), linkText.trim()); linkTarget = null }) { Text("Use") } },
+                    dismissButton = { TextButton(onClick = { linkTarget = null }) { Text("Cancel") } }
+                )
             }
             Spacer(Modifier.height(16.dp))
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
@@ -4597,6 +4731,22 @@ private fun LibraryScreen(
                             Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(categories["${series.sourceId}:${series.id}"] ?: "Reading", color = Color(0xFFD6C5F2), fontSize = 8.sp, letterSpacing = .8.sp)
                                 Spacer(Modifier.weight(1f))
+                                var coverMenu by remember(series.id, series.sourceId) { mutableStateOf(false) }
+                                Box {
+                                    Text("COVER  ▾", color = Muted, fontSize = 8.sp, modifier = Modifier.clickable { coverMenu = true }.padding(7.dp))
+                                    DropdownMenu(expanded = coverMenu, onDismissRequest = { coverMenu = false }, containerColor = Panel) {
+                                        DropdownMenuItem(text = { Text("Find best quality", color = White) }, onClick = {
+                                            coverMenu = false
+                                            libScope.launch {
+                                                val ok = improveCover(series, true)
+                                                android.widget.Toast.makeText(libContext, if (ok) "Better cover applied" else "No better cover found", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        })
+                                        DropdownMenuItem(text = { Text("Pick from gallery", color = White) }, onClick = { coverMenu = false; pickTarget = series; coverPicker.launch(arrayOf("image/*")) })
+                                        DropdownMenuItem(text = { Text("Paste image link", color = White) }, onClick = { coverMenu = false; linkText = ""; linkTarget = series })
+                                        DropdownMenuItem(text = { Text("Reset to original", color = White) }, onClick = { coverMenu = false; CoverOverrides.set(CoverOverrides.key(series), null) })
+                                    }
+                                }
                                 Box {
                                     Text("MOVE TO  ▾", color = Muted, fontSize = 8.sp, modifier = Modifier.clickable { expanded = true }.padding(7.dp))
                                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, containerColor = Panel) {
@@ -4890,9 +5040,9 @@ private fun NoirChapterCinema(
                         )
                     }
             ) {
-                if (series?.coverUrl != null) {
+                if (series?.displayCover() != null) {
                     AsyncImage(
-                        model = series.coverUrl, contentDescription = null,
+                        model = series.displayCover(), contentDescription = null,
                         modifier = Modifier.fillMaxSize().clip(posterShape), contentScale = ContentScale.Crop
                     )
                 } else {
