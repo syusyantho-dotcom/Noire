@@ -3701,7 +3701,7 @@ private fun ReaderScreen(
             val indices = buildList {
                 for (index in (currentPage + 1)..minOf(pages.lastIndex, currentPage + ahead)) add(index)
                 for (index in (currentPage - behind) until currentPage) if (index >= 0) add(index)
-            }.distinct()
+            }.distinct().filter { it in 0..pages.lastIndex }
             // Load nearest-first and record real page heights before they scroll into view,
             // so pages never pop in and shift the layout mid-fling.
             indices.forEach { index ->
